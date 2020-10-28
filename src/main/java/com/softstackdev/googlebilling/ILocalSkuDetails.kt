@@ -7,5 +7,9 @@ interface ILocalSkuDetails {
 
     fun isPurchased(skuName: String): Boolean
     fun saveSkuPurchase(skuName: String, purchasedPlayStore: Boolean)
+
     fun getPurchaseToken(prefixName: String): String
+    fun savePurchaseToken(prefixName: String, purchaseToken: String)
+    fun getCredits(prefixName: String, purchaseToken: String): Int
+    fun saveCredits(prefixName: String, purchaseToken: String, skuCredit: Int)
 }

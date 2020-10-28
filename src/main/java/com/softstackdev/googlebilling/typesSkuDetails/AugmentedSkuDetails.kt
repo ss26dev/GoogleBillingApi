@@ -25,7 +25,6 @@ abstract class AugmentedSkuDetails {
     var originalJson = ""
 
     var isPurchased = false
-    var purchaseToken = ""
 
 
     var title: String = ""

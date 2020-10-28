@@ -6,6 +6,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.android.billingclient.api.*
+import com.softstackdev.googlebilling.AugmentedSkuDetailsDao.updateCreditOnConsumed
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.connectionRetryPolicy
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.resetConnectionRetryPolicyCounter
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.taskExecutionRetryPolicy
@@ -19,12 +20,12 @@ import kotlin.math.pow
 /**
  * Created by Nena_Schmidt on 05.03.2019.
  */
-class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, SkuDetailsResponseListener {
+class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, SkuDetailsResponseListener, ConsumeResponseListener {
 
     companion object {
 
         @Volatile
-        private var instance: BillingRepository? = null
+        internal var instance: BillingRepository? = null
 
         fun getInstance(application: Application): BillingRepository =
                 instance ?: synchronized(this) {
@@ -81,6 +82,7 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
 
                 querySkuDetailsAsync(BillingClient.SkuType.INAPP, SkuProductId.INAPP_SKUS)
                 querySkuDetailsAsync(BillingClient.SkuType.SUBS, SkuProductId.SUBS_SKUS)
+                querySkuDetailsAsync(BillingClient.SkuType.INAPP, SkuProductId.CONSUMABLE_SKUS)
                 querySkuDetailsAsync(BillingClient.SkuType.INAPP, SkuProductId.STORE_APP_SKUS)
 
                 queryPurchasesAsync()
@@ -183,6 +185,22 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
                 //item already owned? call queryPurchasesAsync to verify and process all such items
                 queryPurchasesAsync()
             }
+        }
+    }
+
+    fun consumePurchase(purchaseToken: String) {
+        playStoreBillingClient.consumeAsync(purchaseToken, this)
+    }
+
+    override fun onConsumeResponse(responseCode: Int, purchaseToken: String?) {
+        if (responseCode == BillingClient.BillingResponse.OK) {
+            purchaseToken?.apply {
+                getCoroutineScope().launch {
+                    updateCreditOnConsumed(purchaseToken)
+                }
+            }
+        } else {
+            Log.e(TAG, "Consume - response= $responseCode, purchaseToken= $purchaseToken");
         }
     }
 

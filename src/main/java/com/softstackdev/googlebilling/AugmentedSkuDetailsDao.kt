@@ -5,6 +5,7 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.SkuDetails
 import com.softstackdev.googlebilling.BillingDependency.localSkuDetails
 import com.softstackdev.googlebilling.typesSkuDetails.AugmentedSkuDetails
+import com.softstackdev.googlebilling.typesSkuDetails.ConsumableAugmentedSkuDetails
 import com.softstackdev.googlebilling.typesSkuDetails.IFreeOneDaySkuDetails
 
 /**
@@ -14,6 +15,8 @@ object AugmentedSkuDetailsDao {
 
     private var skuDetailsList = MutableLiveData<MutableList<AugmentedSkuDetails>>()
     fun getSkuDetailsList() = skuDetailsList
+
+    val consumableAugmentedSkuDetailsList = arrayListOf<ConsumableAugmentedSkuDetails>()
 
 
     fun addSkuDetail(augmentedSkuDetails: AugmentedSkuDetails) {
@@ -67,11 +70,22 @@ object AugmentedSkuDetailsDao {
         val augmentedSkuDetailsList = skuDetailsList.value ?: return
 
         augmentedSkuDetailsList.find { it.skuName == purchase.sku }?.apply {
-            this.playStorePurchased(true)
+            if (this is ConsumableAugmentedSkuDetails) {
+                pendingToBeConsumedPurchaseToken = purchase.purchaseToken
+                //need to be changed
+                BillingRepository.instance?.consumePurchase(purchase.purchaseToken)
+            } else {
+                playStorePurchased(true)
+                // this is to notify that values have been changed
+                skuDetailsList.postValue(augmentedSkuDetailsList)
+            }
         }
+    }
 
-        // this is to notify that values have been changed
-        skuDetailsList.postValue(augmentedSkuDetailsList)
+    fun updateCreditOnConsumed(purchaseToken: String){
+        consumableAugmentedSkuDetailsList.find { it.pendingToBeConsumedPurchaseToken == purchaseToken }?.apply {
+            addCreditOnePurchase(purchaseToken)
+        }
     }
 
     fun updateMakeFree24(skuName: String) {
