@@ -10,6 +10,8 @@ import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.connection
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.resetConnectionRetryPolicyCounter
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.taskExecutionRetryPolicy
 import com.softstackdev.googlebilling.typesSkuDetails.AugmentedSkuDetails
+import com.softstackdev.googlebilling.typesSkuDetails.StoreAppAugmentedSkuDetails
+import com.softstackdev.googlebilling.utils.openPlayStore
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.pow
@@ -45,7 +47,7 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
     private var application: Application
 
     private var playStoreResponseCount: Byte = 0
-    private var playStoreResponseCountExpected: Byte = 3
+    private var playStoreResponseCountExpected: Byte = 0
 
     private val TAG = "BillingRepository"
 
@@ -75,8 +77,11 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
             BillingClient.BillingResponse.OK -> {
                 resetConnectionRetryPolicyCounter()//for retry policy
                 playStoreResponseCount = 0
+                playStoreResponseCountExpected = 0
+
                 querySkuDetailsAsync(BillingClient.SkuType.INAPP, SkuProductId.INAPP_SKUS)
                 querySkuDetailsAsync(BillingClient.SkuType.SUBS, SkuProductId.SUBS_SKUS)
+                querySkuDetailsAsync(BillingClient.SkuType.INAPP, SkuProductId.STORE_APP_SKUS)
 
                 queryPurchasesAsync()
             }
@@ -87,6 +92,11 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
     }
 
     private fun querySkuDetailsAsync(type: String, skuList: MutableList<String>) {
+        if (skuList.isEmpty()) {
+            return
+        }
+
+        playStoreResponseCountExpected++
         val params = SkuDetailsParams.newBuilder()
         params.setType(type)
         params.setSkusList(skuList)
@@ -109,6 +119,7 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
     }
 
     private fun queryPurchasesAsync() {
+        playStoreResponseCountExpected++
         taskExecutionRetryPolicy(playStoreBillingClient, this) {
             val purchasesResult = mutableListOf<Purchase>()
 
@@ -143,6 +154,11 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
     }
 
     fun makePurchase(activity: Activity, augmentedSkuDetails: AugmentedSkuDetails) {
+        if (augmentedSkuDetails is StoreAppAugmentedSkuDetails) {
+            openPlayStore(activity, augmentedSkuDetails.packageName)
+            return
+        }
+
         val skuDetails = SkuDetails(augmentedSkuDetails.originalJson)
         val params = BillingFlowParams.newBuilder()
                 .setSkuDetails(skuDetails)
