@@ -4,6 +4,8 @@ import androidx.lifecycle.MutableLiveData
 import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.SkuDetails
 import com.softstackdev.googlebilling.BillingDependency.localSkuDetails
+import com.softstackdev.googlebilling.typesSkuDetails.AugmentedSkuDetails
+import com.softstackdev.googlebilling.typesSkuDetails.IFreeOneDaySkuDetails
 
 /**
  * Created by Nena_Schmidt on 07.03.2019.
@@ -76,8 +78,9 @@ object AugmentedSkuDetailsDao {
         val augmentedSkuDetailsList = skuDetailsList.value ?: return
 
         augmentedSkuDetailsList.find { it.skuName == skuName }?.apply {
-
-            free24Timestamp = localSkuDetails.setFreeFor24h(skuName)
+            if (this is IFreeOneDaySkuDetails) {
+                free24Timestamp = localSkuDetails.setFreeFor24h(skuName)
+            }
 
         } ?: return
 

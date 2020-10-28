@@ -1,15 +1,12 @@
-package com.softstackdev.googlebilling
+package com.softstackdev.googlebilling.typesSkuDetails
 
+import com.softstackdev.googlebilling.AugmentedSkuDetailsDao
 import com.softstackdev.googlebilling.BillingDependency.localSkuDetails
 
 /**
  * Created by Nena_Schmidt on 05.03.2019.
  */
-class AugmentedSkuDetails {
-
-    companion object {
-        var isFree24Available = false
-    }
+abstract class AugmentedSkuDetails {
 
     constructor(skuName: String, title: String, description: String) : this(skuName) {
         this.title = title
@@ -29,9 +26,6 @@ class AugmentedSkuDetails {
 
     var isPurchased = false
     var purchaseToken = ""
-
-    var free24CreditVisible = false
-    var free24Timestamp = 0L
 
 
     var title: String = ""
@@ -60,25 +54,6 @@ class AugmentedSkuDetails {
             localSkuDetails.saveSkuPurchase(skuName, purchasedPlayStore)
             isPurchased = purchasedPlayStore
         }
-    }
-
-
-    fun inappSku() = apply {
-        SkuProductId.INAPP_SKUS.add(skuName)
-        isPurchased = localSkuDetails.isPurchased(skuName)
-    }
-
-    fun inappSkuFree24() = apply {
-        inappSku()
-
-        free24CreditVisible = true
-        isFree24Available = true
-        free24Timestamp = localSkuDetails.getFree24Timestamp(skuName)
-    }
-
-    fun subsSku() = apply {
-        SkuProductId.SUBS_SKUS.add(skuName)
-        isPurchased = localSkuDetails.isPurchased(skuName)
     }
 
 }
