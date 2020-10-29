@@ -9,7 +9,7 @@ import com.softstackdev.googlebilling.SkuProductId
 class SubscriptionAugmentedSkuDetails(skuName: String, title: String, description: String) : AugmentedSkuDetails(skuName, title, description) {
 
     init {
-        SkuProductId.SUBS_SKUS.add(skuName)
+        SkuProductId.SUBSCRIPTION_SKUS.add(skuName)
         isPurchased = BillingDependency.localSkuDetails.isPurchased(skuName)
     }
 }

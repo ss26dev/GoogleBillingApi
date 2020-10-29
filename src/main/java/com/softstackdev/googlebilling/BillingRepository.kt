@@ -81,7 +81,7 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
                 playStoreResponseCountExpected = 0
 
                 querySkuDetailsAsync(BillingClient.SkuType.INAPP, SkuProductId.INAPP_SKUS)
-                querySkuDetailsAsync(BillingClient.SkuType.SUBS, SkuProductId.SUBS_SKUS)
+                querySkuDetailsAsync(BillingClient.SkuType.SUBS, SkuProductId.SUBSCRIPTION_SKUS)
                 querySkuDetailsAsync(BillingClient.SkuType.INAPP, SkuProductId.CONSUMABLE_SKUS)
                 querySkuDetailsAsync(BillingClient.SkuType.INAPP, SkuProductId.STORE_APP_SKUS)
 
