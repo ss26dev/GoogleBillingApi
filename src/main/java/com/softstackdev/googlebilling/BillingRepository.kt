@@ -20,7 +20,8 @@ import kotlin.math.pow
 /**
  * Created by Nena_Schmidt on 05.03.2019.
  */
-class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, SkuDetailsResponseListener, ConsumeResponseListener {
+class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener,
+        SkuDetailsResponseListener, ConsumeResponseListener {
 
     companion object {
 
@@ -56,7 +57,9 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
 
     private fun instantiateAndConnectToPlayBillingService() {
         playStoreBillingClient = BillingClient
-                .newBuilder(application.applicationContext).setListener(this).build()
+                .newBuilder(application.applicationContext)
+                .enablePendingPurchases() // since v2.0 required or app will crash
+                .setListener(this).build()
 
         connectToPlayBillingService()
     }
@@ -73,9 +76,9 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
     }
 
     @SuppressLint("SwitchIntDef")
-    override fun onBillingSetupFinished(responseCode: Int) {
-        when (responseCode) {
-            BillingClient.BillingResponse.OK -> {
+    override fun onBillingSetupFinished(billingResult: BillingResult) {
+        when (billingResult.responseCode) {
+            BillingClient.BillingResponseCode.OK -> {
                 resetConnectionRetryPolicyCounter()//for retry policy
                 playStoreResponseCount = 0
                 playStoreResponseCountExpected = 0
@@ -87,8 +90,8 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
 
                 queryPurchasesAsync()
             }
-            BillingClient.BillingResponse.BILLING_UNAVAILABLE -> {
-                Log.e(TAG, "BillingClient.BillingResponse.BILLING_UNAVAILABLE")
+            else -> {
+                Log.e(TAG, "onBillingSetupFinished - ${billingResult.debugMessage}")
             }
         }
     }
@@ -107,16 +110,19 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
         }
     }
 
-    override fun onSkuDetailsResponse(responseCode: Int, skuDetailsList: MutableList<SkuDetails>?) {
-        if (responseCode == BillingClient.BillingResponse.OK) {
-            skuDetailsList?.let {
-                getCoroutineScope().launch {
-                    AugmentedSkuDetailsDao.updateDetails(it)
-                    postResponseReceived()
+    override fun onSkuDetailsResponse(billingResult: BillingResult, skuDetailsList: MutableList<SkuDetails>?) {
+        when (billingResult.responseCode) {
+            BillingClient.BillingResponseCode.OK -> {
+                skuDetailsList?.let {
+                    getCoroutineScope().launch {
+                        AugmentedSkuDetailsDao.updateDetails(it)
+                        postResponseReceived()
+                    }
                 }
             }
-        } else {
-            Log.e(TAG, "SkuDetails query failed with response: $responseCode")
+            else -> {
+                Log.e(TAG, "onSkuDetailsResponse - ${billingResult.debugMessage}")
+            }
         }
     }
 
@@ -172,35 +178,50 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener, 
     }
 
     @SuppressLint("SwitchIntDef")
-    override fun onPurchasesUpdated(responseCode: Int, purchases: MutableList<Purchase>?) {
-        when (responseCode) {
-            BillingClient.BillingResponse.OK -> {
+    override fun onPurchasesUpdated(billingResult: BillingResult, purchases: MutableList<Purchase>?) {
+        when (billingResult.responseCode) {
+            BillingClient.BillingResponseCode.OK -> {
                 purchases?.forEach { purchase ->
                     if (isSignatureValid(purchase)) {
                         AugmentedSkuDetailsDao.updateNewPurchase(purchase)
                     }
                 }
             }
-            BillingClient.BillingResponse.ITEM_ALREADY_OWNED -> {
+            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
                 //item already owned? call queryPurchasesAsync to verify and process all such items
                 queryPurchasesAsync()
+            }
+            BillingClient.BillingResponseCode.SERVICE_DISCONNECTED -> {
+                connectToPlayBillingService()
+            }
+            else -> {
+                Log.e(TAG, "onPurchasesUpdated - ${billingResult.debugMessage}")
             }
         }
     }
 
     fun consumePurchase(purchaseToken: String) {
-        playStoreBillingClient.consumeAsync(purchaseToken, this)
+        val params = ConsumeParams.newBuilder()
+                .setPurchaseToken(purchaseToken)
+                .build()
+        playStoreBillingClient.consumeAsync(params, this)
     }
 
-    override fun onConsumeResponse(responseCode: Int, purchaseToken: String?) {
-        if (responseCode == BillingClient.BillingResponse.OK) {
-            purchaseToken?.apply {
-                getCoroutineScope().launch {
-                    updateCreditOnConsumed(purchaseToken)
+    override fun onConsumeResponse(billingResult: BillingResult, purchaseToken: String?) {
+        when (billingResult.responseCode) {
+            BillingClient.BillingResponseCode.OK -> {
+                purchaseToken?.apply {
+                    getCoroutineScope().launch {
+                        updateCreditOnConsumed(purchaseToken)
+                    }
                 }
             }
-        } else {
-            Log.e(TAG, "Consume - response= $responseCode, purchaseToken= $purchaseToken");
+            BillingClient.BillingResponseCode.SERVICE_DISCONNECTED -> {
+                connectToPlayBillingService()
+            }
+            else -> {
+                Log.e(TAG, "onConsumeResponse - ${billingResult.debugMessage}")
+            }
         }
     }
 
