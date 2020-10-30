@@ -21,7 +21,7 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
         repository = BillingRepository.getInstance(application)
 //        repository.startDataSourceConnections()
 
-        skuDetailsListLiveData = AugmentedSkuDetailsDao.getSkuDetailsList()
+        skuDetailsListLiveData = AugmentedSkuDetailsDao.skuDetailsList
         playStoreLoadedLiveData = BillingRepository.playStoreLoaded
     }
 

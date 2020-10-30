@@ -13,21 +13,17 @@ import com.softstackdev.googlebilling.typesSkuDetails.IFreeOneDaySkuDetails
  */
 object AugmentedSkuDetailsDao {
 
-    private var skuDetailsList = MutableLiveData<MutableList<AugmentedSkuDetails>>()
-    fun getSkuDetailsList() = skuDetailsList
+    val skuDetailsList = MutableLiveData<MutableList<AugmentedSkuDetails>>()
+    private val augmentedSkuDetailsList = arrayListOf<AugmentedSkuDetails>()
 
     val consumableAugmentedSkuDetailsList = arrayListOf<ConsumableAugmentedSkuDetails>()
 
 
     fun addSkuDetail(augmentedSkuDetails: AugmentedSkuDetails) {
-        val augmentedSkuDetailsList = skuDetailsList.value ?: arrayListOf()
         augmentedSkuDetailsList.add(augmentedSkuDetails)
-        skuDetailsList.value = augmentedSkuDetailsList
     }
 
     fun updateDetails(skuDetailsListPlayStore: MutableList<SkuDetails>) {
-        val augmentedSkuDetailsList = skuDetailsList.value ?: return
-
         skuDetailsListPlayStore.forEach { skuDetails ->
             augmentedSkuDetailsList.find { it.skuName == skuDetails.sku }?.apply {
 
@@ -44,14 +40,11 @@ object AugmentedSkuDetailsDao {
             }
         }
 
-        // this is to notify that values have been changed
-        skuDetailsList.postValue(augmentedSkuDetailsList)
+        notifyUpdateInternalValue()
     }
 
 
     fun updatePurchasesForAll(listWithPurchases: MutableList<Purchase>) {
-        val augmentedSkuDetailsList = skuDetailsList.value ?: return
-
         augmentedSkuDetailsList.forEach { augmentedSkuDetails ->
             listWithPurchases.find { it.sku == augmentedSkuDetails.skuName }
                     ?.let {
@@ -62,13 +55,10 @@ object AugmentedSkuDetailsDao {
                     }
         }
 
-        // this is to notify that values have been changed
-        skuDetailsList.postValue(augmentedSkuDetailsList)
+        notifyUpdateInternalValue()
     }
 
     fun updateNewPurchase(purchase: Purchase) {
-        val augmentedSkuDetailsList = skuDetailsList.value ?: return
-
         augmentedSkuDetailsList.find { it.skuName == purchase.sku }?.apply {
             if (this is ConsumableAugmentedSkuDetails) {
                 pendingToBeConsumedPurchaseToken = purchase.purchaseToken
@@ -76,36 +66,30 @@ object AugmentedSkuDetailsDao {
                 BillingRepository.instance?.consumePurchase(purchase.purchaseToken)
             } else {
                 playStorePurchased(true)
-                // this is to notify that values have been changed
-                skuDetailsList.postValue(augmentedSkuDetailsList)
+                notifyUpdateInternalValue()
             }
         }
     }
 
-    fun updateCreditOnConsumed(purchaseToken: String){
+    fun updateCreditOnConsumed(purchaseToken: String) {
         consumableAugmentedSkuDetailsList.find { it.pendingToBeConsumedPurchaseToken == purchaseToken }?.apply {
             addCreditOnePurchase(purchaseToken)
         }
     }
 
     fun updateMakeFree24(skuName: String) {
-        val augmentedSkuDetailsList = skuDetailsList.value ?: return
-
         augmentedSkuDetailsList.find { it.skuName == skuName }?.apply {
             if (this is IFreeOneDaySkuDetails) {
                 free24Timestamp = localSkuDetails.setFreeFor24h(skuName)
+                notifyUpdateInternalValue()
             }
-
-        } ?: return
-
-        // this is to notify that values have been changed
-        skuDetailsList.postValue(augmentedSkuDetailsList)
+        }
     }
 
+    /**
+     * this is to notify that values have been changed
+     */
     fun notifyUpdateInternalValue() {
-        val augmentedSkuDetailsList = skuDetailsList.value ?: return
-
-        // this is to notify that values have been changed
         skuDetailsList.postValue(augmentedSkuDetailsList)
     }
 }
