@@ -14,7 +14,7 @@ import com.softstackdev.googlebilling.typesSkuDetails.IFreeOneDaySkuDetails
 object AugmentedSkuDetailsDao {
 
     val skuDetailsList = MutableLiveData<MutableList<AugmentedSkuDetails>>()
-    private val augmentedSkuDetailsList = arrayListOf<AugmentedSkuDetails>()
+    internal val augmentedSkuDetailsList = arrayListOf<AugmentedSkuDetails>()
 
     val consumableAugmentedSkuDetailsList = arrayListOf<ConsumableAugmentedSkuDetails>()
 
@@ -44,30 +44,28 @@ object AugmentedSkuDetailsDao {
     }
 
 
-    fun updatePurchasesForAll(listWithPurchases: MutableList<Purchase>) {
+    fun resetPurchasesForAll() {
         augmentedSkuDetailsList.forEach { augmentedSkuDetails ->
-            listWithPurchases.find { it.sku == augmentedSkuDetails.skuName }
-                    ?.let {
-                        augmentedSkuDetails.playStorePurchased(true)
-                    }
-                    ?: run {
-                        augmentedSkuDetails.playStorePurchased(false)
-                    }
+            augmentedSkuDetails.playStorePurchased(false)
         }
 
         notifyUpdateInternalValue()
     }
 
-    fun updateNewPurchase(purchase: Purchase) {
-        augmentedSkuDetailsList.find { it.skuName == purchase.sku }?.apply {
-            if (this is ConsumableAugmentedSkuDetails) {
-                pendingToBeConsumedPurchaseToken = purchase.purchaseToken
-                //need to be changed
-                BillingRepository.instance?.consumePurchase(purchase.purchaseToken)
-            } else {
+    fun updateAcknowledgedPurchases(listWithPurchases: MutableList<Purchase>) {
+        listWithPurchases.forEach { purchase ->
+            augmentedSkuDetailsList.find { it.skuName == purchase.sku }?.apply {
                 playStorePurchased(true)
-                notifyUpdateInternalValue()
             }
+        }
+
+        notifyUpdateInternalValue()
+    }
+
+    fun updateAcknowledgedPurchase(purchase: Purchase) {
+        augmentedSkuDetailsList.find { it.skuName == purchase.sku }?.apply {
+            playStorePurchased(true)
+            notifyUpdateInternalValue()
         }
     }
 

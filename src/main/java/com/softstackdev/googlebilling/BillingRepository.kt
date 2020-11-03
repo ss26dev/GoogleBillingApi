@@ -10,7 +10,9 @@ import com.softstackdev.googlebilling.AugmentedSkuDetailsDao.updateCreditOnConsu
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.connectionRetryPolicy
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.resetConnectionRetryPolicyCounter
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.taskExecutionRetryPolicy
+import com.softstackdev.googlebilling.SkuProductId.CONSUMABLE_SKUS
 import com.softstackdev.googlebilling.typesSkuDetails.AugmentedSkuDetails
+import com.softstackdev.googlebilling.typesSkuDetails.ConsumableAugmentedSkuDetails
 import com.softstackdev.googlebilling.typesSkuDetails.StoreAppAugmentedSkuDetails
 import com.softstackdev.googlebilling.utils.openPlayStore
 import kotlinx.coroutines.*
@@ -26,7 +28,7 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener,
     companion object {
 
         @Volatile
-        internal var instance: BillingRepository? = null
+        private var instance: BillingRepository? = null
 
         fun getInstance(application: Application): BillingRepository =
                 instance ?: synchronized(this) {
@@ -96,17 +98,18 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener,
         }
     }
 
-    private fun querySkuDetailsAsync(type: String, skuList: MutableList<String>) {
+    private fun querySkuDetailsAsync(@BillingClient.SkuType type: String, skuList: MutableList<String>) {
         if (skuList.isEmpty()) {
             return
         }
 
         playStoreResponseCountExpected++
         val params = SkuDetailsParams.newBuilder()
-        params.setType(type)
-        params.setSkusList(skuList)
+                .setType(type)
+                .setSkusList(skuList)
+                .build()
         taskExecutionRetryPolicy(playStoreBillingClient, this) {
-            playStoreBillingClient.querySkuDetailsAsync(params.build(), this)
+            playStoreBillingClient.querySkuDetailsAsync(params, this)
         }
     }
 
@@ -133,24 +136,81 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener,
 
             var result = playStoreBillingClient.queryPurchases(BillingClient.SkuType.INAPP)
             result?.purchasesList?.apply {
-                this.forEach {
-                    if (isSignatureValid(it)) {
-                        purchasesResult.add(it)
-                    }
+                purchasesResult.addAll(this)
+            }
+
+            if (isSubscriptionSupported()) {
+                result = playStoreBillingClient.queryPurchases(BillingClient.SkuType.SUBS)
+                result?.purchasesList?.apply {
+                    purchasesResult.addAll(this)
                 }
             }
 
-            result = playStoreBillingClient.queryPurchases(BillingClient.SkuType.SUBS)
-            result?.purchasesList?.apply {
-                this.forEach {
-                    if (isSignatureValid(it)) {
-                        purchasesResult.add(it)
-                    }
-                }
-            }
-
-            AugmentedSkuDetailsDao.updatePurchasesForAll(purchasesResult)
+            AugmentedSkuDetailsDao.resetPurchasesForAll()
             postResponseReceived()
+
+            processPurchasesResponseAsync(purchasesResult)
+        }
+    }
+
+
+    private fun processPurchasesResponseAsync(purchasesResult: List<Purchase>) {
+        getCoroutineScope().launch {
+
+            val validPurchases = mutableListOf<Purchase>()
+            purchasesResult.forEach { purchase ->
+                if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
+                    if (isSignatureValid(purchase)) {
+                        validPurchases.add(purchase)
+                    }
+                }
+            }
+
+            val (consumables, nonConsumables) = validPurchases.partition {
+                CONSUMABLE_SKUS.contains(it.sku)
+            }
+            acknowledgeNonConsumablePurchasesAsync(nonConsumables)
+            handleConsumablePurchasesAsync(consumables)
+        }
+    }
+
+    private fun handleConsumablePurchasesAsync(consumables: List<Purchase>) {
+        consumables.forEach { purchase ->
+
+            AugmentedSkuDetailsDao.augmentedSkuDetailsList.find { it.skuName == purchase.sku }?.apply {
+                if (this is ConsumableAugmentedSkuDetails) {
+                    pendingToBeConsumedPurchaseToken = purchase.purchaseToken
+                    consumePurchase(purchase.purchaseToken)
+                }
+            }
+        }
+    }
+
+    private fun acknowledgeNonConsumablePurchasesAsync(nonConsumables: List<Purchase>) {
+        val acknowledgedPurchase = mutableListOf<Purchase>()
+        nonConsumables.forEach { purchase ->
+            if (purchase.isAcknowledged) {
+                acknowledgedPurchase.add(purchase)
+            } else {
+                acknowledgePurchase(purchase)
+            }
+        }
+
+        AugmentedSkuDetailsDao.updateAcknowledgedPurchases(acknowledgedPurchase)
+    }
+
+    private fun acknowledgePurchase(purchase: Purchase) {
+        val params = AcknowledgePurchaseParams.newBuilder()
+                .setPurchaseToken(purchase.purchaseToken)
+                .build()
+
+        playStoreBillingClient.acknowledgePurchase(params) { billingResult ->
+            when (billingResult.responseCode) {
+                BillingClient.BillingResponseCode.OK -> {
+                    AugmentedSkuDetailsDao.updateAcknowledgedPurchase(purchase)
+                }
+                else -> Log.d(TAG, "onAcknowledgePurchaseResponse - ${billingResult.debugMessage}")
+            }
         }
     }
 
@@ -181,10 +241,8 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener,
     override fun onPurchasesUpdated(billingResult: BillingResult, purchases: MutableList<Purchase>?) {
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
-                purchases?.forEach { purchase ->
-                    if (isSignatureValid(purchase)) {
-                        AugmentedSkuDetailsDao.updateNewPurchase(purchase)
-                    }
+                purchases?.apply {
+                    processPurchasesResponseAsync(purchases)
                 }
             }
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
@@ -234,6 +292,22 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener,
         }
     }
 
+    /**
+     * Checks if the user's device supports subscriptions
+     *
+     * Some Android phones might have an older version of the Google Play Store app
+     * that does not support certain product types, such as subscriptions
+     */
+    private fun isSubscriptionSupported(): Boolean {
+        val billingResult = playStoreBillingClient.isFeatureSupported(BillingClient.FeatureType.SUBSCRIPTIONS)
+        var succeeded = false
+        when (billingResult.responseCode) {
+            BillingClient.BillingResponseCode.OK -> succeeded = true
+            BillingClient.BillingResponseCode.SERVICE_DISCONNECTED -> connectToPlayBillingService()
+            else -> Log.e(TAG, "isSubscriptionSupported - ${billingResult.debugMessage}")
+        }
+        return succeeded
+    }
 
     /**
      * This private object class shows example retry policies. You may choose to replace it with
