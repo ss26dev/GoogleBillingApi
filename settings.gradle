@@ -1,0 +1,3 @@
+include ':GoogleBillingApiLib'
+include ':app'
+rootProject.name = "GoogleBillingApi"
