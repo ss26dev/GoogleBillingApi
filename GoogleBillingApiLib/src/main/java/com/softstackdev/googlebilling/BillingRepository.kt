@@ -265,13 +265,11 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener,
         playStoreBillingClient.consumeAsync(params, this)
     }
 
-    override fun onConsumeResponse(billingResult: BillingResult, purchaseToken: String?) {
+    override fun onConsumeResponse(billingResult: BillingResult, purchaseToken: String) {
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
-                purchaseToken?.apply {
-                    getCoroutineScope().launch {
-                        updateCreditOnConsumed(purchaseToken)
-                    }
+                getCoroutineScope().launch {
+                    updateCreditOnConsumed(purchaseToken)
                 }
             }
             BillingClient.BillingResponseCode.SERVICE_DISCONNECTED -> {
