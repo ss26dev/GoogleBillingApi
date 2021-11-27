@@ -1,5 +1,3 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.softstackdev.googlebilling">
+<manifest package="com.softstackdev.googlebilling">
 
-    /
 </manifest>
