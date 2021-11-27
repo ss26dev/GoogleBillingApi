@@ -12,7 +12,7 @@ import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.resetConne
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.taskExecutionRetryPolicy
 import com.softstackdev.googlebilling.SkuProductId.CONSUMABLE_SKUS
 import com.softstackdev.googlebilling.typesSkuDetails.AugmentedSkuDetails
-import com.softstackdev.googlebilling.typesSkuDetails.ConsumableAugmentedSkuDetails
+import com.softstackdev.googlebilling.typesSkuDetails.CreditConsumableAugmentedSkuDetails
 import com.softstackdev.googlebilling.typesSkuDetails.StoreAppAugmentedSkuDetails
 import com.softstackdev.googlebilling.utils.openPlayStore
 import kotlinx.coroutines.*
@@ -178,7 +178,7 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener,
         consumables.forEach { purchase ->
 
             AugmentedSkuDetailsDao.augmentedSkuDetailsList.find { it.skuName == purchase.sku }?.apply {
-                if (this is ConsumableAugmentedSkuDetails) {
+                if (this is CreditConsumableAugmentedSkuDetails) {
                     pendingToBeConsumedPurchaseToken = purchase.purchaseToken
                     consumePurchase(purchase.purchaseToken)
                 }

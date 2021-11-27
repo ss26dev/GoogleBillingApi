@@ -5,7 +5,7 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.SkuDetails
 import com.softstackdev.googlebilling.BillingDependency.localSkuDetails
 import com.softstackdev.googlebilling.typesSkuDetails.AugmentedSkuDetails
-import com.softstackdev.googlebilling.typesSkuDetails.ConsumableAugmentedSkuDetails
+import com.softstackdev.googlebilling.typesSkuDetails.CreditConsumableAugmentedSkuDetails
 import com.softstackdev.googlebilling.typesSkuDetails.IFreeOneDaySkuDetails
 
 /**
@@ -16,7 +16,7 @@ object AugmentedSkuDetailsDao {
     val skuDetailsList = MutableLiveData<MutableList<AugmentedSkuDetails>>()
     internal val augmentedSkuDetailsList = arrayListOf<AugmentedSkuDetails>()
 
-    val consumableAugmentedSkuDetailsList = arrayListOf<ConsumableAugmentedSkuDetails>()
+    val consumableAugmentedSkuDetailsList = arrayListOf<CreditConsumableAugmentedSkuDetails>()
 
 
     fun addSkuDetail(augmentedSkuDetails: AugmentedSkuDetails) {
