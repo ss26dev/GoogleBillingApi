@@ -1,3 +1,2 @@
 include ':GoogleBillingApiLib'
-include ':sample'
 rootProject.name = "GoogleBillingApi"
