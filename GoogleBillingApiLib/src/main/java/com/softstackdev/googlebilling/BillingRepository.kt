@@ -13,6 +13,7 @@ import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.taskExecut
 import com.softstackdev.googlebilling.SkuProductId.CONSUMABLE_SKUS
 import com.softstackdev.googlebilling.typesSkuDetails.AugmentedSkuDetails
 import com.softstackdev.googlebilling.typesSkuDetails.CreditConsumableAugmentedSkuDetails
+import com.softstackdev.googlebilling.typesSkuDetails.InstantConsumableSkuDetails
 import com.softstackdev.googlebilling.typesSkuDetails.StoreAppAugmentedSkuDetails
 import com.softstackdev.googlebilling.utils.openPlayStore
 import kotlinx.coroutines.*
@@ -178,9 +179,12 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener,
         consumables.forEach { purchase ->
 
             AugmentedSkuDetailsDao.augmentedSkuDetailsList.find { it.skuName == purchase.sku }?.apply {
-                if (this is CreditConsumableAugmentedSkuDetails) {
-                    pendingToBeConsumedPurchaseToken = purchase.purchaseToken
-                    consumePurchase(purchase.purchaseToken)
+                when(this){
+                    is CreditConsumableAugmentedSkuDetails -> {
+                        pendingToBeConsumedPurchaseToken = purchase.purchaseToken
+                        consumePurchase(purchase.purchaseToken)
+                    }
+                    is InstantConsumableSkuDetails -> consumePurchase(purchase.purchaseToken)
                 }
             }
         }
@@ -258,7 +262,7 @@ class BillingRepository : PurchasesUpdatedListener, BillingClientStateListener,
         }
     }
 
-    fun consumePurchase(purchaseToken: String) {
+    private fun consumePurchase(purchaseToken: String) {
         val params = ConsumeParams.newBuilder()
                 .setPurchaseToken(purchaseToken)
                 .build()
