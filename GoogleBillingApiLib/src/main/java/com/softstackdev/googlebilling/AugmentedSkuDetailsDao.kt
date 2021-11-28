@@ -54,7 +54,7 @@ object AugmentedSkuDetailsDao {
 
     fun updateAcknowledgedPurchases(listWithPurchases: MutableList<Purchase>) {
         listWithPurchases.forEach { purchase ->
-            augmentedSkuDetailsList.find { it.skuName == purchase.sku }?.apply {
+            augmentedSkuDetailsList.find { it.skuName == purchase.skus[0] }?.apply {
                 playStorePurchased(true)
             }
         }
@@ -63,7 +63,7 @@ object AugmentedSkuDetailsDao {
     }
 
     fun updateAcknowledgedPurchase(purchase: Purchase) {
-        augmentedSkuDetailsList.find { it.skuName == purchase.sku }?.apply {
+        augmentedSkuDetailsList.find { it.skuName == purchase.skus[0] }?.apply {
             playStorePurchased(true)
             notifyUpdateInternalValue()
         }
