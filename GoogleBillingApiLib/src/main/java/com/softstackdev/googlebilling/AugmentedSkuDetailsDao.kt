@@ -1,6 +1,7 @@
 package com.softstackdev.googlebilling
 
 import androidx.lifecycle.MutableLiveData
+import com.android.billingclient.api.ProductDetails
 import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.SkuDetails
 import com.softstackdev.googlebilling.BillingDependency.localSkuDetails
@@ -23,20 +24,24 @@ object AugmentedSkuDetailsDao {
         augmentedSkuDetailsList.add(augmentedSkuDetails)
     }
 
-    fun updateDetails(skuDetailsListPlayStore: MutableList<SkuDetails>) {
-        skuDetailsListPlayStore.forEach { skuDetails ->
-            augmentedSkuDetailsList.find { it.skuName == skuDetails.sku }?.apply {
+    fun updateDetails(skuDetailsListPlayStore: MutableList<ProductDetails>) {
+        skuDetailsListPlayStore.forEach { productDetails ->
+            augmentedSkuDetailsList.find { it.skuName == productDetails.productId }?.apply {
 
                 // title= "MGRS (Map Coordinates)" -> title= "MGRS"
-                title = skuDetails.title.replace(Regex(""" \(.*\)"""), "")
-                description = skuDetails.description
-                price = skuDetails.price
-                if (!skuDetails.subscriptionPeriod.isNullOrEmpty()) {
-                    // subscriptionPeriod= P3M -> price= ###/3M
-                    price += "/" + skuDetails.subscriptionPeriod.substring(1)
-                }
-                originalJson = skuDetails.originalJson
+                title = productDetails.title.replace(Regex(""" \(.*\)"""), "")
+                description = productDetails.description
+                price = if (!productDetails.subscriptionOfferDetails.isNullOrEmpty()) {
+                    val pricingPhase = productDetails.subscriptionOfferDetails!![0].pricingPhases
+                        .pricingPhaseList[0]
 
+                    // subscriptionPeriod= P3M -> price= ###/3M
+                    "${pricingPhase.formattedPrice}/${pricingPhase.billingPeriod.substring(1)}"
+                } else {
+                    productDetails.oneTimePurchaseOfferDetails?.formattedPrice ?: ""
+                }
+
+                originalProductDetails = productDetails
             }
         }
 

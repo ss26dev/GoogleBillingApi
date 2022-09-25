@@ -1,5 +1,7 @@
 package com.softstackdev.googlebilling.typesSkuDetails
 
+import com.android.billingclient.api.BillingClient
+import com.android.billingclient.api.QueryProductDetailsParams
 import com.softstackdev.googlebilling.SkuProductId
 
 /**
@@ -9,6 +11,11 @@ class StoreAppAugmentedSkuDetails(skuName: String, title: String, description: S
                                   val packageName: String) : AugmentedSkuDetails(skuName, title, description) {
 
     init {
-        SkuProductId.STORE_APP_SKUS.add(skuName)
+        val product = QueryProductDetailsParams.Product.newBuilder()
+            .setProductId(skuName)
+            .setProductType(BillingClient.ProductType.INAPP)
+            .build()
+
+        SkuProductId.STORE_APP_SKUS.add(product)
     }
 }

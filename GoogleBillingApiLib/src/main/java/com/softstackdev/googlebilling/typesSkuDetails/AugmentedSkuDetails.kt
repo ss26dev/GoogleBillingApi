@@ -1,5 +1,7 @@
 package com.softstackdev.googlebilling.typesSkuDetails
 
+import com.android.billingclient.api.ProductDetails
+import com.android.billingclient.api.QueryProductDetailsParams
 import com.softstackdev.googlebilling.AugmentedSkuDetailsDao
 import com.softstackdev.googlebilling.BillingDependency.localSkuDetails
 
@@ -20,9 +22,10 @@ abstract class AugmentedSkuDetails {
     }
 
     var skuName = ""
+    lateinit var product: QueryProductDetailsParams.Product
 
     var price = ""
-    var originalJson = ""
+    var originalProductDetails: ProductDetails? = null
 
     var isPurchased = false
 
