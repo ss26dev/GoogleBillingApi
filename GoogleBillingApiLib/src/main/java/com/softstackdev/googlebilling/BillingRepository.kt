@@ -150,12 +150,13 @@ class BillingRepository private constructor(private var application: Application
                         purchasesResult.addAll(this)
                     }
                 }
+
+
+                AugmentedSkuDetailsDao.resetPurchasesForAll()
+                postResponseReceived()
+
+                processPurchasesResponseAsync(purchasesResult)
             }
-
-            AugmentedSkuDetailsDao.resetPurchasesForAll()
-            postResponseReceived()
-
-            processPurchasesResponseAsync(purchasesResult)
         }
     }
 
