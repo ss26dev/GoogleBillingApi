@@ -5,19 +5,19 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.android.billingclient.api.*
-import com.softstackdev.googlebilling.AugmentedSkuDetailsDao.updateCreditOnConsumed
+import com.softstackdev.googlebilling.AugmentedProductDetailsDao.updateCreditOnConsumed
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.connectionRetryPolicy
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.resetConnectionRetryPolicyCounter
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.taskExecutionRetryPolicy
-import com.softstackdev.googlebilling.SkuProductId.CONSUMABLE_SKUS
-import com.softstackdev.googlebilling.SkuProductId.INAPP_SKUS
-import com.softstackdev.googlebilling.SkuProductId.STORE_APP_SKUS
-import com.softstackdev.googlebilling.SkuProductId.SUBSCRIPTION_SKUS
-import com.softstackdev.googlebilling.SkuProductId.getQueryProductList
-import com.softstackdev.googlebilling.typesSkuDetails.AugmentedSkuDetails
-import com.softstackdev.googlebilling.typesSkuDetails.CreditConsumableAugmentedSkuDetails
-import com.softstackdev.googlebilling.typesSkuDetails.InstantConsumableSkuDetails
-import com.softstackdev.googlebilling.typesSkuDetails.StoreAppAugmentedSkuDetails
+import com.softstackdev.googlebilling.Products.CONSUMABLE_PRODUCTS
+import com.softstackdev.googlebilling.Products.INAPP_PRODUCTS
+import com.softstackdev.googlebilling.Products.STORE_APP_PRODUCTS
+import com.softstackdev.googlebilling.Products.SUBSCRIPTION_PRODUCTS
+import com.softstackdev.googlebilling.Products.getQueryProductList
+import com.softstackdev.googlebilling.typesProductDetails.AugmentedProductDetails
+import com.softstackdev.googlebilling.typesProductDetails.CreditConsumableAugmentedProductDetails
+import com.softstackdev.googlebilling.typesProductDetails.InstantConsumableProductDetails
+import com.softstackdev.googlebilling.typesProductDetails.StoreAppAugmentedProductDetails
 import com.softstackdev.googlebilling.utils.openPlayStore
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicInteger
@@ -82,10 +82,10 @@ class BillingRepository private constructor(private var application: Application
                 playStoreResponseCount = 0
                 playStoreResponseCountExpected = 0
 
-                queryProductDetailsAsync(INAPP_SKUS)
-                queryProductDetailsAsync(SUBSCRIPTION_SKUS)
-                queryProductDetailsAsync(getQueryProductList(CONSUMABLE_SKUS))
-                queryProductDetailsAsync(STORE_APP_SKUS)
+                queryProductDetailsAsync(INAPP_PRODUCTS)
+                queryProductDetailsAsync(SUBSCRIPTION_PRODUCTS)
+                queryProductDetailsAsync(getQueryProductList(CONSUMABLE_PRODUCTS))
+                queryProductDetailsAsync(STORE_APP_PRODUCTS)
 
                 queryPurchasesAsync()
             }
@@ -119,13 +119,13 @@ class BillingRepository private constructor(private var application: Application
             BillingClient.BillingResponseCode.OK -> {
                 productDetails.let {
                     getCoroutineScope().launch {
-                        AugmentedSkuDetailsDao.updateDetails(it)
+                        AugmentedProductDetailsDao.updateDetails(it)
                         postResponseReceived()
                     }
                 }
             }
             else -> {
-                Log.e(TAG, "onSkuDetailsResponse - ${billingResult.debugMessage}")
+                Log.e(TAG, "onProductDetailsResponse - ${billingResult.debugMessage}")
             }
         }
     }
@@ -158,10 +158,8 @@ class BillingRepository private constructor(private var application: Application
                     }
                 }
 
-
-                AugmentedSkuDetailsDao.resetPurchasesForAll()
+                AugmentedProductDetailsDao.resetPurchasesForAll()
                 postResponseReceived()
-
                 processPurchasesResponseAsync(purchasesResult)
             }
         }
@@ -180,7 +178,7 @@ class BillingRepository private constructor(private var application: Application
             }
 
             val (consumables, nonConsumables) = validPurchases.partition { purchase ->
-                CONSUMABLE_SKUS.map { it.skuName }.contains(purchase.products[0])
+                CONSUMABLE_PRODUCTS.map { it.productId }.contains(purchase.products[0])
             }
 
             acknowledgeNonConsumablePurchasesAsync(nonConsumables)
@@ -191,15 +189,15 @@ class BillingRepository private constructor(private var application: Application
     private fun handleConsumablePurchasesAsync(consumables: List<Purchase>) {
         consumables.forEach { purchase ->
 
-            AugmentedSkuDetailsDao.augmentedSkuDetailsList.find {
-                it.skuName == purchase.products[0]
+            AugmentedProductDetailsDao.augmentedProductDetailsList.find {
+                it.productId == purchase.products[0]
             }?.apply {
-                when(this){
-                    is CreditConsumableAugmentedSkuDetails -> {
+                when (this) {
+                    is CreditConsumableAugmentedProductDetails -> {
                         pendingToBeConsumedPurchaseToken = purchase.purchaseToken
                         consumePurchase(purchase.purchaseToken)
                     }
-                    is InstantConsumableSkuDetails -> consumePurchase(purchase.purchaseToken)
+                    is InstantConsumableProductDetails -> consumePurchase(purchase.purchaseToken)
                 }
             }
         }
@@ -215,7 +213,7 @@ class BillingRepository private constructor(private var application: Application
             }
         }
 
-        AugmentedSkuDetailsDao.updateAcknowledgedPurchases(acknowledgedPurchase)
+        AugmentedProductDetailsDao.updateAcknowledgedPurchases(acknowledgedPurchase)
     }
 
     private fun acknowledgePurchase(purchase: Purchase) {
@@ -226,7 +224,7 @@ class BillingRepository private constructor(private var application: Application
         playStoreBillingClient.acknowledgePurchase(params) { billingResult ->
             when (billingResult.responseCode) {
                 BillingClient.BillingResponseCode.OK -> {
-                    AugmentedSkuDetailsDao.updateAcknowledgedPurchase(purchase)
+                    AugmentedProductDetailsDao.updateAcknowledgedPurchase(purchase)
                 }
                 else -> Log.d(TAG, "onAcknowledgePurchaseResponse - ${billingResult.debugMessage}")
             }
@@ -240,18 +238,18 @@ class BillingRepository private constructor(private var application: Application
         }
     }
 
-    fun makePurchase(activity: Activity, augmentedSkuDetails: AugmentedSkuDetails) {
-        if (augmentedSkuDetails is StoreAppAugmentedSkuDetails) {
-            openPlayStore(activity, augmentedSkuDetails.packageName)
+    fun makePurchase(activity: Activity, augmentedProductDetails: AugmentedProductDetails) {
+        if (augmentedProductDetails is StoreAppAugmentedProductDetails) {
+            openPlayStore(activity, augmentedProductDetails.packageName)
             return
         }
 
-        val subscriptionOfferToken = augmentedSkuDetails.originalProductDetails!!
+        val subscriptionOfferToken = augmentedProductDetails.originalProductDetails!!
                                              .subscriptionOfferDetails?.get(0)?.offerToken ?: ""
         val productDetailsParamsList =
             listOf(
                 BillingFlowParams.ProductDetailsParams.newBuilder()
-                    .setProductDetails(augmentedSkuDetails.originalProductDetails!!)
+                    .setProductDetails(augmentedProductDetails.originalProductDetails!!)
                     .setOfferToken(subscriptionOfferToken)
                     .build()
             )

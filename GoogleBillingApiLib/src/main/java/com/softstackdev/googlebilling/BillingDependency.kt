@@ -18,14 +18,14 @@ object BillingDependency {
      */
     lateinit var base64EncodedPublicKey: String
 
-    lateinit var localSkuDetails: ILocalSkuDetails
+    lateinit var localProductDetails: ILocalProductDetails
 
     /**
      * This method will initialize all the dependency necessary for the app and
      * must be called from [android.app.Application] subclass
      */
-    fun initWith(localSkuDetails: ILocalSkuDetails, base64EncodedPublicKey: String) {
-        this.localSkuDetails = localSkuDetails
+    fun initWith(localProductDetails: ILocalProductDetails, base64EncodedPublicKey: String) {
+        this.localProductDetails = localProductDetails
         this.base64EncodedPublicKey = base64EncodedPublicKey
     }
 }
