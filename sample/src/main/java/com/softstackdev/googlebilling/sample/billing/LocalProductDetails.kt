@@ -2,7 +2,7 @@ package com.softstackdev.googlebilling.sample.billing
 
 import com.softstackdev.googlebilling.ILocalSkuDetails
 
-object LocalSkuDetails: ILocalSkuDetails {
+object LocalProductDetails: ILocalSkuDetails {
 
     override fun getFree24Timestamp(skuName: String): Long {
         TODO("Not yet implemented")
