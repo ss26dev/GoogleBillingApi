@@ -1,5 +1,7 @@
 package com.softstackdev.googlebilling.typesSkuDetails
 
+import com.android.billingclient.api.BillingClient
+import com.android.billingclient.api.QueryProductDetailsParams
 import com.softstackdev.googlebilling.AugmentedSkuDetailsDao
 import com.softstackdev.googlebilling.AugmentedSkuDetailsDao.consumableAugmentedSkuDetailsList
 import com.softstackdev.googlebilling.BillingDependency.localSkuDetails
@@ -20,7 +22,12 @@ class CreditConsumableAugmentedSkuDetails(skuName: String, title: String, descri
         private set
 
     init {
-        SkuProductId.CONSUMABLE_SKUS.add(skuName)
+        product = QueryProductDetailsParams.Product.newBuilder()
+            .setProductId(skuName)
+            .setProductType(BillingClient.ProductType.INAPP)
+            .build()
+
+        SkuProductId.CONSUMABLE_SKUS.add(this)
         consumableAugmentedSkuDetailsList.add(this)
     }
 

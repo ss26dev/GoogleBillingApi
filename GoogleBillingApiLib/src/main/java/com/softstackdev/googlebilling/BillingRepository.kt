@@ -1,6 +1,5 @@
 package com.softstackdev.googlebilling
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
 import android.util.Log
@@ -14,6 +13,7 @@ import com.softstackdev.googlebilling.SkuProductId.CONSUMABLE_SKUS
 import com.softstackdev.googlebilling.SkuProductId.INAPP_SKUS
 import com.softstackdev.googlebilling.SkuProductId.STORE_APP_SKUS
 import com.softstackdev.googlebilling.SkuProductId.SUBSCRIPTION_SKUS
+import com.softstackdev.googlebilling.SkuProductId.getQueryProductList
 import com.softstackdev.googlebilling.typesSkuDetails.AugmentedSkuDetails
 import com.softstackdev.googlebilling.typesSkuDetails.CreditConsumableAugmentedSkuDetails
 import com.softstackdev.googlebilling.typesSkuDetails.InstantConsumableSkuDetails
@@ -27,7 +27,7 @@ import kotlin.math.pow
  * Created by Nena_Schmidt on 05.03.2019.
  */
 class BillingRepository private constructor(private var application: Application) : PurchasesUpdatedListener, BillingClientStateListener,
-    SkuDetailsResponseListener, ConsumeResponseListener {
+    ProductDetailsResponseListener, ConsumeResponseListener {
 
     companion object {
 
@@ -75,7 +75,6 @@ class BillingRepository private constructor(private var application: Application
         connectionRetryPolicy { connectToPlayBillingService() }
     }
 
-    @SuppressLint("SwitchIntDef")
     override fun onBillingSetupFinished(billingResult: BillingResult) {
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
@@ -83,10 +82,10 @@ class BillingRepository private constructor(private var application: Application
                 playStoreResponseCount = 0
                 playStoreResponseCountExpected = 0
 
-                querySkuDetailsAsync(BillingClient.SkuType.INAPP, INAPP_SKUS)
-                querySkuDetailsAsync(BillingClient.SkuType.SUBS, SUBSCRIPTION_SKUS)
-                querySkuDetailsAsync(BillingClient.SkuType.INAPP, CONSUMABLE_SKUS)
-                querySkuDetailsAsync(BillingClient.SkuType.INAPP, STORE_APP_SKUS)
+                queryProductDetailsAsync(INAPP_SKUS)
+                queryProductDetailsAsync(SUBSCRIPTION_SKUS)
+                queryProductDetailsAsync(getQueryProductList(CONSUMABLE_SKUS))
+                queryProductDetailsAsync(STORE_APP_SKUS)
 
                 queryPurchasesAsync()
             }
@@ -96,31 +95,29 @@ class BillingRepository private constructor(private var application: Application
         }
     }
 
-    private fun querySkuDetailsAsync(
-        @BillingClient.SkuType type: String,
-        skuList: MutableList<String>
+    private fun queryProductDetailsAsync(
+            productList: List<QueryProductDetailsParams.Product>
     ) {
-        if (skuList.isEmpty()) {
+        if (productList.isEmpty()) {
             return
         }
 
         playStoreResponseCountExpected++
-        val params = SkuDetailsParams.newBuilder()
-            .setType(type)
-            .setSkusList(skuList)
-            .build()
+        val params = QueryProductDetailsParams.newBuilder()
+                .setProductList(productList)
+                .build()
+
         taskExecutionRetryPolicy(playStoreBillingClient, this) {
-            playStoreBillingClient.querySkuDetailsAsync(params, this)
+            playStoreBillingClient.queryProductDetailsAsync(params, this)
         }
     }
 
-    override fun onSkuDetailsResponse(
-        billingResult: BillingResult,
-        skuDetailsList: MutableList<SkuDetails>?
-    ) {
+    override fun onProductDetailsResponse(
+            billingResult: BillingResult,
+            productDetails: MutableList<ProductDetails>) {
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
-                skuDetailsList?.let {
+                productDetails.let {
                     getCoroutineScope().launch {
                         AugmentedSkuDetailsDao.updateDetails(it)
                         postResponseReceived()
@@ -139,13 +136,23 @@ class BillingRepository private constructor(private var application: Application
             val purchasesResult = mutableListOf<Purchase>()
 
             getCoroutineScope().launch {
-                var result = playStoreBillingClient.queryPurchasesAsync(BillingClient.SkuType.INAPP)
+                var result = playStoreBillingClient.queryPurchasesAsync(
+                    QueryPurchasesParams.newBuilder()
+                        .setProductType(BillingClient.ProductType.INAPP)
+                        .build()
+                )
+
                 result.purchasesList.apply {
                     purchasesResult.addAll(this)
                 }
 
                 if (isSubscriptionSupported()) {
-                    result = playStoreBillingClient.queryPurchasesAsync(BillingClient.SkuType.SUBS)
+                    result = playStoreBillingClient.queryPurchasesAsync(
+                        QueryPurchasesParams.newBuilder()
+                            .setProductType(BillingClient.ProductType.SUBS)
+                            .build()
+                    )
+
                     result.purchasesList.apply {
                         purchasesResult.addAll(this)
                     }
@@ -163,7 +170,6 @@ class BillingRepository private constructor(private var application: Application
 
     private fun processPurchasesResponseAsync(purchasesResult: List<Purchase>) {
         getCoroutineScope().launch {
-
             val validPurchases = mutableListOf<Purchase>()
             purchasesResult.forEach { purchase ->
                 if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
@@ -173,9 +179,10 @@ class BillingRepository private constructor(private var application: Application
                 }
             }
 
-            val (consumables, nonConsumables) = validPurchases.partition {
-                CONSUMABLE_SKUS.contains(it.skus[0])
+            val (consumables, nonConsumables) = validPurchases.partition { purchase ->
+                CONSUMABLE_SKUS.map { it.skuName }.contains(purchase.products[0])
             }
+
             acknowledgeNonConsumablePurchasesAsync(nonConsumables)
             handleConsumablePurchasesAsync(consumables)
         }
@@ -184,7 +191,9 @@ class BillingRepository private constructor(private var application: Application
     private fun handleConsumablePurchasesAsync(consumables: List<Purchase>) {
         consumables.forEach { purchase ->
 
-            AugmentedSkuDetailsDao.augmentedSkuDetailsList.find { it.skuName == purchase.skus[0] }?.apply {
+            AugmentedSkuDetailsDao.augmentedSkuDetailsList.find {
+                it.skuName == purchase.products[0]
+            }?.apply {
                 when(this){
                     is CreditConsumableAugmentedSkuDetails -> {
                         pendingToBeConsumedPurchaseToken = purchase.purchaseToken
@@ -237,9 +246,18 @@ class BillingRepository private constructor(private var application: Application
             return
         }
 
-        val skuDetails = SkuDetails(augmentedSkuDetails.originalJson)
+        val subscriptionOfferToken = augmentedSkuDetails.originalProductDetails!!
+                                             .subscriptionOfferDetails?.get(0)?.offerToken ?: ""
+        val productDetailsParamsList =
+            listOf(
+                BillingFlowParams.ProductDetailsParams.newBuilder()
+                    .setProductDetails(augmentedSkuDetails.originalProductDetails!!)
+                    .setOfferToken(subscriptionOfferToken)
+                    .build()
+            )
+
         val params = BillingFlowParams.newBuilder()
-            .setSkuDetails(skuDetails)
+            .setProductDetailsParamsList(productDetailsParamsList)
             .build()
 
         taskExecutionRetryPolicy(playStoreBillingClient, this) {
@@ -247,7 +265,6 @@ class BillingRepository private constructor(private var application: Application
         }
     }
 
-    @SuppressLint("SwitchIntDef")
     override fun onPurchasesUpdated(
         billingResult: BillingResult,
         purchases: MutableList<Purchase>?

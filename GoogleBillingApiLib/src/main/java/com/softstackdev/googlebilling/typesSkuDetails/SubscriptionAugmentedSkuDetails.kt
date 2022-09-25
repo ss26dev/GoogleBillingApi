@@ -1,5 +1,7 @@
 package com.softstackdev.googlebilling.typesSkuDetails
 
+import com.android.billingclient.api.BillingClient
+import com.android.billingclient.api.QueryProductDetailsParams
 import com.softstackdev.googlebilling.BillingDependency
 import com.softstackdev.googlebilling.SkuProductId
 
@@ -9,7 +11,12 @@ import com.softstackdev.googlebilling.SkuProductId
 class SubscriptionAugmentedSkuDetails(skuName: String, title: String, description: String) : AugmentedSkuDetails(skuName, title, description) {
 
     init {
-        SkuProductId.SUBSCRIPTION_SKUS.add(skuName)
+        val product = QueryProductDetailsParams.Product.newBuilder()
+            .setProductId(skuName)
+            .setProductType(BillingClient.ProductType.SUBS)
+            .build()
+
+        SkuProductId.SUBSCRIPTION_SKUS.add(product)
         isPurchased = BillingDependency.localSkuDetails.isPurchased(skuName)
     }
 }
