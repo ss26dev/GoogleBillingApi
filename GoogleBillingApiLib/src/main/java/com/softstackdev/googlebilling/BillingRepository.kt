@@ -26,7 +26,8 @@ import kotlin.math.pow
 /**
  * Created by Nena_Schmidt on 05.03.2019.
  */
-class BillingRepository private constructor(private var application: Application) : PurchasesUpdatedListener, BillingClientStateListener,
+class BillingRepository private constructor(private var application: Application) :
+    PurchasesUpdatedListener, BillingClientStateListener,
     ProductDetailsResponseListener, ConsumeResponseListener {
 
     companion object {
@@ -43,6 +44,7 @@ class BillingRepository private constructor(private var application: Application
 
         @Volatile
         var playStoreLoaded: MutableLiveData<Boolean> = MutableLiveData()
+        const val TAG = "SSDBillingRepository"
     }
 
 
@@ -50,8 +52,6 @@ class BillingRepository private constructor(private var application: Application
 
     private var playStoreResponseCount: Byte = 0
     private var playStoreResponseCountExpected: Byte = 0
-
-    private val TAG = "BillingRepository"
 
     private fun getCoroutineScope() = CoroutineScope(Job() + Dispatchers.IO)
 
@@ -66,7 +66,12 @@ class BillingRepository private constructor(private var application: Application
 
     private fun connectToPlayBillingService() {
         if (!playStoreBillingClient.isReady) {
-            playStoreBillingClient.startConnection(this)
+            try {
+                playStoreBillingClient.startConnection(this)
+            } catch (e: IllegalStateException) {
+                e.printStackTrace()
+                Log.e(TAG, "Failed to connect to billing client: ${e.message}")
+            }
         }
     }
 
@@ -89,6 +94,7 @@ class BillingRepository private constructor(private var application: Application
 
                 queryPurchasesAsync()
             }
+
             else -> {
                 Log.e(TAG, "onBillingSetupFinished - ${billingResult.debugMessage}")
             }
@@ -96,7 +102,7 @@ class BillingRepository private constructor(private var application: Application
     }
 
     private fun queryProductDetailsAsync(
-            productList: List<QueryProductDetailsParams.Product>
+        productList: List<QueryProductDetailsParams.Product>
     ) {
         if (productList.isEmpty()) {
             return
@@ -104,8 +110,8 @@ class BillingRepository private constructor(private var application: Application
 
         playStoreResponseCountExpected++
         val params = QueryProductDetailsParams.newBuilder()
-                .setProductList(productList)
-                .build()
+            .setProductList(productList)
+            .build()
 
         taskExecutionRetryPolicy(playStoreBillingClient, this) {
             playStoreBillingClient.queryProductDetailsAsync(params, this)
@@ -113,8 +119,9 @@ class BillingRepository private constructor(private var application: Application
     }
 
     override fun onProductDetailsResponse(
-            billingResult: BillingResult,
-            productDetails: MutableList<ProductDetails>) {
+        billingResult: BillingResult,
+        productDetails: MutableList<ProductDetails>
+    ) {
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
                 productDetails.let {
@@ -124,6 +131,7 @@ class BillingRepository private constructor(private var application: Application
                     }
                 }
             }
+
             else -> {
                 Log.e(TAG, "onProductDetailsResponse - ${billingResult.debugMessage}")
             }
@@ -197,6 +205,7 @@ class BillingRepository private constructor(private var application: Application
                         pendingToBeConsumedPurchaseToken = purchase.purchaseToken
                         consumePurchase(purchase.purchaseToken)
                     }
+
                     is InstantConsumableProductDetails -> consumePurchase(purchase.purchaseToken)
                 }
             }
@@ -226,6 +235,7 @@ class BillingRepository private constructor(private var application: Application
                 BillingClient.BillingResponseCode.OK -> {
                     AugmentedProductDetailsDao.updateAcknowledgedPurchase(purchase)
                 }
+
                 else -> Log.d(TAG, "onAcknowledgePurchaseResponse - ${billingResult.debugMessage}")
             }
         }
@@ -245,7 +255,7 @@ class BillingRepository private constructor(private var application: Application
         }
 
         val subscriptionOfferToken = augmentedProductDetails.originalProductDetails!!
-                                             .subscriptionOfferDetails?.get(0)?.offerToken ?: ""
+            .subscriptionOfferDetails?.get(0)?.offerToken ?: ""
         val productDetailsParamsList =
             listOf(
                 BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -273,13 +283,16 @@ class BillingRepository private constructor(private var application: Application
                     processPurchasesResponseAsync(purchases)
                 }
             }
+
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
                 //item already owned? call queryPurchasesAsync to verify and process all such items
                 queryPurchasesAsync()
             }
+
             BillingClient.BillingResponseCode.SERVICE_DISCONNECTED -> {
                 connectToPlayBillingService()
             }
+
             else -> {
                 Log.e(TAG, "onPurchasesUpdated - ${billingResult.debugMessage}")
             }
@@ -300,9 +313,11 @@ class BillingRepository private constructor(private var application: Application
                     updateCreditOnConsumed(purchaseToken)
                 }
             }
+
             BillingClient.BillingResponseCode.SERVICE_DISCONNECTED -> {
                 connectToPlayBillingService()
             }
+
             else -> {
                 Log.e(TAG, "onConsumeResponse - ${billingResult.debugMessage}")
             }
@@ -382,11 +397,20 @@ class BillingRepository private constructor(private var application: Application
          * All this is doing is check that billingClient is connected and if it's not, request
          * connection, wait x number of seconds and then proceed with the actual task.
          */
-        fun taskExecutionRetryPolicy(billingClient: BillingClient, listener: BillingRepository, task: () -> Unit) {
+        fun taskExecutionRetryPolicy(
+            billingClient: BillingClient,
+            listener: BillingRepository,
+            task: () -> Unit
+        ) {
             val scope = CoroutineScope(Job() + Dispatchers.IO)
             scope.launch {
                 if (!billingClient.isReady) {
-                    billingClient.startConnection(listener)
+                    try {
+                        billingClient.startConnection(listener)
+                    } catch (e: IllegalStateException) {
+                        e.printStackTrace()
+                        Log.e(TAG, "Failed to connect to billing client: ${e.message}")
+                    }
                     delay(taskDelay)
                 }
                 task()
