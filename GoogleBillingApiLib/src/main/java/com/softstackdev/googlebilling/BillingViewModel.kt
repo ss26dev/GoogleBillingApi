@@ -25,8 +25,8 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
         playStoreLoadedLiveData = BillingRepository.playStoreLoaded
     }
 
-    fun makePurchase(activity: Activity, AugmentedProductDetails: AugmentedProductDetails) {
-        repository.makePurchase(activity, AugmentedProductDetails)
+    fun makePurchase(activity: Activity, augmentedProductDetails: AugmentedProductDetails) {
+        repository.makePurchase(activity, augmentedProductDetails)
     }
 
     fun makeFree24(productId: String) {
