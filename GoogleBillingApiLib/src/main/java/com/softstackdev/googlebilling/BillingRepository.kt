@@ -4,7 +4,20 @@ import android.app.Activity
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
-import com.android.billingclient.api.*
+import com.android.billingclient.api.AcknowledgePurchaseParams
+import com.android.billingclient.api.BillingClient
+import com.android.billingclient.api.BillingClientStateListener
+import com.android.billingclient.api.BillingFlowParams
+import com.android.billingclient.api.BillingResult
+import com.android.billingclient.api.ConsumeParams
+import com.android.billingclient.api.ConsumeResponseListener
+import com.android.billingclient.api.ProductDetails
+import com.android.billingclient.api.ProductDetailsResponseListener
+import com.android.billingclient.api.Purchase
+import com.android.billingclient.api.PurchasesUpdatedListener
+import com.android.billingclient.api.QueryProductDetailsParams
+import com.android.billingclient.api.QueryPurchasesParams
+import com.android.billingclient.api.queryPurchasesAsync
 import com.softstackdev.googlebilling.AugmentedProductDetailsDao.updateCreditOnConsumed
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.connectionRetryPolicy
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.resetConnectionRetryPolicyCounter
@@ -19,7 +32,11 @@ import com.softstackdev.googlebilling.typesProductDetails.CreditConsumableAugmen
 import com.softstackdev.googlebilling.typesProductDetails.InstantConsumableProductDetails
 import com.softstackdev.googlebilling.typesProductDetails.StoreAppAugmentedProductDetails
 import com.softstackdev.googlebilling.utils.openPlayStore
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.pow
 
@@ -248,18 +265,22 @@ class BillingRepository private constructor(private var application: Application
         }
     }
 
-    fun makePurchase(activity: Activity, augmentedProductDetails: AugmentedProductDetails) {
+    fun makePurchase(
+        activity: Activity,
+        augmentedProductDetails: AugmentedProductDetails
+    ): Boolean {
         if (augmentedProductDetails is StoreAppAugmentedProductDetails) {
             openPlayStore(activity, augmentedProductDetails.packageName)
-            return
+            return true
         }
 
-        val subscriptionOfferToken = augmentedProductDetails.originalProductDetails!!
-            .subscriptionOfferDetails?.get(0)?.offerToken ?: ""
+        val originalProductDetails = augmentedProductDetails.originalProductDetails ?: return false
+        val subscriptionOfferToken =
+            originalProductDetails.subscriptionOfferDetails?.get(0)?.offerToken ?: ""
         val productDetailsParamsList =
             listOf(
                 BillingFlowParams.ProductDetailsParams.newBuilder()
-                    .setProductDetails(augmentedProductDetails.originalProductDetails!!)
+                    .setProductDetails(originalProductDetails)
                     .setOfferToken(subscriptionOfferToken)
                     .build()
             )
@@ -271,6 +292,7 @@ class BillingRepository private constructor(private var application: Application
         taskExecutionRetryPolicy(playStoreBillingClient, this) {
             playStoreBillingClient.launchBillingFlow(activity, params)
         }
+        return true
     }
 
     override fun onPurchasesUpdated(
