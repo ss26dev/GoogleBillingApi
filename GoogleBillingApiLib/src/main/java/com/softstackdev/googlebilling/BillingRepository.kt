@@ -87,7 +87,10 @@ class BillingRepository private constructor(private var application: Application
                 playStoreBillingClient.startConnection(this)
             } catch (e: IllegalStateException) {
                 e.printStackTrace()
-                Log.e(TAG, "Failed to connect to billing client: ${e.message}")
+                Log.e(TAG, "IllegalStateException Failed to connect to billing client: ${e.message}")
+            } catch (e: SecurityException) {
+                e.printStackTrace()
+                Log.e(TAG, "SecurityException Failed to connect to billing client: ${e.message}")
             }
         }
     }
@@ -431,7 +434,10 @@ class BillingRepository private constructor(private var application: Application
                         billingClient.startConnection(listener)
                     } catch (e: IllegalStateException) {
                         e.printStackTrace()
-                        Log.e(TAG, "Failed to connect to billing client: ${e.message}")
+                        Log.e(TAG, "IllegalStateException on RetryPolicy Failed to connect to billing client: ${e.message}")
+                    } catch (e: SecurityException) {
+                        e.printStackTrace()
+                        Log.e(TAG, "SecurityException on RetryPolicy Failed to connect to billing client: ${e.message}")
                     }
                     delay(taskDelay)
                 }
