@@ -87,7 +87,10 @@ class BillingRepository private constructor(private var application: Application
                 playStoreBillingClient.startConnection(this)
             } catch (e: IllegalStateException) {
                 e.printStackTrace()
-                Log.e(TAG, "IllegalStateException Failed to connect to billing client: ${e.message}")
+                Log.e(
+                    TAG,
+                    "IllegalStateException Failed to connect to billing client: ${e.message}"
+                )
             } catch (e: SecurityException) {
                 e.printStackTrace()
                 Log.e(TAG, "SecurityException Failed to connect to billing client: ${e.message}")
@@ -270,7 +273,8 @@ class BillingRepository private constructor(private var application: Application
 
     fun makePurchase(
         activity: Activity,
-        augmentedProductDetails: AugmentedProductDetails
+        augmentedProductDetails: AugmentedProductDetails,
+        subscriptionOfferId: String = ""
     ): Boolean {
         if (augmentedProductDetails is StoreAppAugmentedProductDetails) {
             openPlayStore(activity, augmentedProductDetails.packageName)
@@ -279,7 +283,9 @@ class BillingRepository private constructor(private var application: Application
 
         val originalProductDetails = augmentedProductDetails.originalProductDetails ?: return false
         val subscriptionOfferToken =
-            originalProductDetails.subscriptionOfferDetails?.get(0)?.offerToken ?: ""
+            originalProductDetails.subscriptionOfferDetails?.firstOrNull {
+                it.offerId == subscriptionOfferId
+            }?.offerToken ?: ""
         val productDetailsParamsList =
             listOf(
                 BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -290,10 +296,20 @@ class BillingRepository private constructor(private var application: Application
 
         val params = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(productDetailsParamsList)
-            .build()
+
+        if(augmentedProductDetails.purchaseToken.isNotEmpty()) {
+            params.setSubscriptionUpdateParams(
+                BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                    .setOldPurchaseToken(augmentedProductDetails.purchaseToken)
+                    .setSubscriptionReplacementMode(
+                        BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.CHARGE_FULL_PRICE
+                    )
+                    .build()
+            )
+        }
 
         taskExecutionRetryPolicy(playStoreBillingClient, this) {
-            playStoreBillingClient.launchBillingFlow(activity, params)
+            playStoreBillingClient.launchBillingFlow(activity, params.build())
         }
         return true
     }
@@ -434,10 +450,16 @@ class BillingRepository private constructor(private var application: Application
                         billingClient.startConnection(listener)
                     } catch (e: IllegalStateException) {
                         e.printStackTrace()
-                        Log.e(TAG, "IllegalStateException on RetryPolicy Failed to connect to billing client: ${e.message}")
+                        Log.e(
+                            TAG,
+                            "IllegalStateException on RetryPolicy Failed to connect to billing client: ${e.message}"
+                        )
                     } catch (e: SecurityException) {
                         e.printStackTrace()
-                        Log.e(TAG, "SecurityException on RetryPolicy Failed to connect to billing client: ${e.message}")
+                        Log.e(
+                            TAG,
+                            "SecurityException on RetryPolicy Failed to connect to billing client: ${e.message}"
+                        )
                     }
                     delay(taskDelay)
                 }

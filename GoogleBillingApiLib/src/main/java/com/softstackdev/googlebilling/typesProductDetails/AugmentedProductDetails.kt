@@ -28,6 +28,8 @@ abstract class AugmentedProductDetails {
     var originalProductDetails: ProductDetails? = null
 
     var isPurchased = false
+    var purchaseToken = ""
+    var orderId: String = ""
 
 
     var title: String = ""
@@ -50,11 +52,17 @@ abstract class AugmentedProductDetails {
 
 
 
-    fun playStorePurchased(purchasedPlayStore: Boolean) {
+    open fun playStorePurchased(
+        purchasedPlayStore: Boolean,
+        purchaseToken: String = "",
+        orderId: String? = ""
+    ) {
         if (purchasedPlayStore != isPurchased) {
-            //on local is different from play store
+            // on local is different from play store
             localProductDetails.saveProductPurchase(productId, purchasedPlayStore)
             isPurchased = purchasedPlayStore
+            this.purchaseToken = purchaseToken
+            this.orderId = orderId ?: ""
         }
     }
 

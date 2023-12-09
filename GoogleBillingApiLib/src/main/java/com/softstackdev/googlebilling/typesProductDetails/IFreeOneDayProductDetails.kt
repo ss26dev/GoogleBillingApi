@@ -6,7 +6,10 @@ package com.softstackdev.googlebilling.typesProductDetails
 interface IFreeOneDayProductDetails {
 
     companion object {
-
+        /**
+         * When we have at least one FreeOneDay product type, this flag will be set to true.
+         * It's used to control whether we should initialize the rewarded ads or not
+         */
         var isFree24Available = false
     }
 

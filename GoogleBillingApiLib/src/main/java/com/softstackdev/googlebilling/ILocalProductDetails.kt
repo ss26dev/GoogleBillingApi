@@ -16,6 +16,13 @@ interface ILocalProductDetails {
 
     fun isPurchased(productName: String): Boolean
     fun saveProductPurchase(productName: String, purchasedPlayStore: Boolean)
+    fun saveSubscription(
+        productName: String,
+        purchasedPlayStore: Boolean,
+        selectedBillingPeriod: String
+    )
+
+    fun getSelectedBillingPeriod(productName: String): String
 
     fun getPurchaseToken(prefixName: String): String
     fun savePurchaseToken(prefixName: String, purchaseToken: String)
