@@ -26,13 +26,15 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
+     * @param billingPeriod e.g. p1m, p6m, p1y
      * @return true if purchase was executed.
      */
     fun makePurchase(
         activity: Activity,
-        augmentedProductDetails: AugmentedProductDetails
+        augmentedProductDetails: AugmentedProductDetails,
+        billingPeriod: String = ""
     ): Boolean {
-        return repository.makePurchase(activity, augmentedProductDetails)
+        return repository.makePurchase(activity, augmentedProductDetails, billingPeriod)
     }
 
     fun makeFree24(productId: String) {

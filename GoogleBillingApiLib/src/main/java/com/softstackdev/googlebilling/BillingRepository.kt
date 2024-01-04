@@ -271,10 +271,14 @@ class BillingRepository private constructor(private var application: Application
         }
     }
 
+    /**
+     * @param billingPeriod e.g. p1m, p6m, p1y
+     *
+     */
     fun makePurchase(
         activity: Activity,
         augmentedProductDetails: AugmentedProductDetails,
-        subscriptionOfferId: String = ""
+        billingPeriod: String = ""
     ): Boolean {
         if (augmentedProductDetails is StoreAppAugmentedProductDetails) {
             openPlayStore(activity, augmentedProductDetails.packageName)
@@ -284,7 +288,7 @@ class BillingRepository private constructor(private var application: Application
         val originalProductDetails = augmentedProductDetails.originalProductDetails ?: return false
         val subscriptionOfferToken =
             originalProductDetails.subscriptionOfferDetails?.firstOrNull {
-                it.offerId == subscriptionOfferId
+                it.basePlanId.contains(billingPeriod)
             }?.offerToken ?: ""
         val productDetailsParamsList =
             listOf(
