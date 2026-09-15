@@ -25,7 +25,7 @@ object AugmentedProductDetailsDao {
         augmentedProductDetailsList.add(augmentedProductDetails)
     }
 
-    fun updateDetails(productDetailsListPlayStore: MutableList<ProductDetails>) {
+    fun updateDetails(productDetailsListPlayStore: List<ProductDetails>) {
         productDetailsListPlayStore.forEach { productDetails ->
             augmentedProductDetailsList.find { it.productId == productDetails.productId }?.apply {
 

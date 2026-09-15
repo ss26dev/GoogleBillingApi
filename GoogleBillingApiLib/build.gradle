@@ -1,18 +1,20 @@
 plugins {
     id 'com.android.library'
-    id 'kotlin-android'
-    id 'kotlin-kapt'
     id 'maven-publish'
 }
 
 android {
     namespace 'com.softstackdev.googlebilling'
 
-    compileSdk version_sdk
+    def sdkVersion = rootProject.extensions.extraProperties.has('version_sdk')
+        ? rootProject.extensions.extraProperties.get('version_sdk')
+        : 37
+
+    compileSdk sdkVersion
 
     defaultConfig {
-        minSdkVersion 21
-        targetSdkVersion version_sdk
+        minSdkVersion 23
+        targetSdkVersion sdkVersion
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
@@ -30,8 +32,8 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+    publishing {
+        singleVariant("release")
     }
 }
 
@@ -44,7 +46,7 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.15.0'
     implementation 'androidx.appcompat:appcompat:1.7.0'
 
-    implementation "com.android.billingclient:billing-ktx:7.1.1"
+    implementation "com.android.billingclient:billing-ktx:9.1.0"
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
