@@ -11,11 +11,12 @@ import com.android.billingclient.api.BillingFlowParams
 import com.android.billingclient.api.BillingResult
 import com.android.billingclient.api.ConsumeParams
 import com.android.billingclient.api.ConsumeResponseListener
-import com.android.billingclient.api.ProductDetails
 import com.android.billingclient.api.ProductDetailsResponseListener
+import com.android.billingclient.api.PendingPurchasesParams
 import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
+import com.android.billingclient.api.QueryProductDetailsResult
 import com.android.billingclient.api.QueryPurchasesParams
 import com.android.billingclient.api.queryPurchasesAsync
 import com.softstackdev.googlebilling.AugmentedProductDetailsDao.updateCreditOnConsumed
@@ -67,21 +68,30 @@ class BillingRepository private constructor(private var application: Application
 
     private lateinit var playStoreBillingClient: BillingClient
 
-    private var playStoreResponseCount: Byte = 0
-    private var playStoreResponseCountExpected: Byte = 0
+    private val playStoreResponseCount = AtomicInteger(0)
+    private val playStoreResponseCountExpected = AtomicInteger(0)
 
     private fun getCoroutineScope() = CoroutineScope(Job() + Dispatchers.IO)
 
     private fun instantiateAndConnectToPlayBillingService() {
+        Log.i(TAG, "Creating billing client for ${application.packageName}")
         playStoreBillingClient = BillingClient
             .newBuilder(application.applicationContext)
-            .enablePendingPurchases() // since v2.0 required or app will crash
+            .enablePendingPurchases(
+                PendingPurchasesParams.newBuilder()
+                    .enableOneTimeProducts()
+                    .build()
+            )
+            .enableAutoServiceReconnection()
             .setListener(this).build()
 
-        connectToPlayBillingService()
+        // Always register the initial setup callback, including when automatic
+        // reconnection makes a newly created client report that it is ready.
+        playStoreBillingClient.startConnection(this)
     }
 
     private fun connectToPlayBillingService() {
+        Log.i(TAG, "Connecting billing client; ready=${playStoreBillingClient.isReady}")
         if (!playStoreBillingClient.isReady) {
             try {
                 playStoreBillingClient.startConnection(this)
@@ -104,11 +114,13 @@ class BillingRepository private constructor(private var application: Application
     }
 
     override fun onBillingSetupFinished(billingResult: BillingResult) {
+        Log.i(TAG, "Billing setup: ${billingResult.responseCode} ${billingResult.debugMessage}")
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
                 resetConnectionRetryPolicyCounter()//for retry policy
-                playStoreResponseCount = 0
-                playStoreResponseCountExpected = 0
+                playStoreLoaded.postValue(false)
+                playStoreResponseCount.set(0)
+                playStoreResponseCountExpected.set(0)
 
                 queryProductDetailsAsync(INAPP_PRODUCTS)
                 queryProductDetailsAsync(SUBSCRIPTION_PRODUCTS)
@@ -131,7 +143,7 @@ class BillingRepository private constructor(private var application: Application
             return
         }
 
-        playStoreResponseCountExpected++
+        playStoreResponseCountExpected.incrementAndGet()
         val params = QueryProductDetailsParams.newBuilder()
             .setProductList(productList)
             .build()
@@ -143,55 +155,72 @@ class BillingRepository private constructor(private var application: Application
 
     override fun onProductDetailsResponse(
         billingResult: BillingResult,
-        productDetails: MutableList<ProductDetails>
+        queryProductDetailsResult: QueryProductDetailsResult
     ) {
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
-                productDetails.let {
+                queryProductDetailsResult.productDetailsList.let {
                     getCoroutineScope().launch {
-                        AugmentedProductDetailsDao.updateDetails(it)
-                        postResponseReceived()
+                        try {
+                            AugmentedProductDetailsDao.updateDetails(it)
+                        } finally {
+                            markLoadResponseReceived("product details")
+                        }
                     }
                 }
             }
 
-            else -> {
-                Log.e(TAG, "onProductDetailsResponse - ${billingResult.debugMessage}")
-            }
+            else -> Log.e(
+                TAG,
+                "onProductDetailsResponse (${billingResult.responseCode}) - " +
+                    "${billingResult.debugMessage}; unfetched=" +
+                    queryProductDetailsResult.unfetchedProductList
+            )
+        }
+
+        if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+            markLoadResponseReceived("product details failure")
         }
     }
 
     private fun queryPurchasesAsync() {
-        playStoreResponseCountExpected++
+        playStoreResponseCountExpected.incrementAndGet()
         taskExecutionRetryPolicy(playStoreBillingClient, this) {
             val purchasesResult = mutableListOf<Purchase>()
 
             getCoroutineScope().launch {
-                var result = playStoreBillingClient.queryPurchasesAsync(
-                    QueryPurchasesParams.newBuilder()
-                        .setProductType(BillingClient.ProductType.INAPP)
-                        .build()
-                )
-
-                result.purchasesList.apply {
-                    purchasesResult.addAll(this)
-                }
-
-                if (isSubscriptionSupported()) {
-                    result = playStoreBillingClient.queryPurchasesAsync(
+                try {
+                    var result = playStoreBillingClient.queryPurchasesAsync(
                         QueryPurchasesParams.newBuilder()
-                            .setProductType(BillingClient.ProductType.SUBS)
+                            .setProductType(BillingClient.ProductType.INAPP)
                             .build()
                     )
 
-                    result.purchasesList.apply {
-                        purchasesResult.addAll(this)
+                    if (result.billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                        purchasesResult.addAll(result.purchasesList)
+                    } else {
+                        Log.e(TAG, "query INAPP purchases - ${result.billingResult.debugMessage}")
                     }
-                }
 
-                AugmentedProductDetailsDao.resetPurchasesForAll()
-                postResponseReceived()
-                processPurchasesResponseAsync(purchasesResult)
+                    if (isSubscriptionSupported()) {
+                        result = playStoreBillingClient.queryPurchasesAsync(
+                            QueryPurchasesParams.newBuilder()
+                                .setProductType(BillingClient.ProductType.SUBS)
+                                .build()
+                        )
+
+                        if (result.billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                            purchasesResult.addAll(result.purchasesList)
+                        } else {
+                            Log.e(TAG, "query SUBS purchases - ${result.billingResult.debugMessage}")
+                        }
+                    }
+
+                    AugmentedProductDetailsDao.resetPurchasesForAll()
+                    processPurchasesResponseAsync(purchasesResult)
+                } finally {
+                    markLoadResponseReceived("purchases")
+                }
             }
         }
     }
@@ -264,9 +293,11 @@ class BillingRepository private constructor(private var application: Application
         }
     }
 
-    private fun postResponseReceived() {
-        playStoreResponseCount++
-        if (playStoreResponseCount == playStoreResponseCountExpected) {
+    private fun markLoadResponseReceived(source: String) {
+        val responseCount = playStoreResponseCount.incrementAndGet()
+        val expectedCount = playStoreResponseCountExpected.get()
+        Log.d(TAG, "Shop load response $responseCount/$expectedCount from $source")
+        if (expectedCount > 0 && responseCount >= expectedCount) {
             playStoreLoaded.postValue(true)
         }
     }
