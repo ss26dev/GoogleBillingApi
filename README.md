@@ -39,6 +39,19 @@ project(':googleBillingApi').projectDir = new File(settingsDir, '../GoogleBillin
 implementation project(':googleBillingApi')
 ```
 
+## Build requirements
+
+Use JDK 17 and Android SDK 37. The Gradle wrapper uses Gradle 9.8.1 with
+Android Gradle Plugin 9.4.1. The library supports Android 6.0 (API 23) and newer.
+
+Dependencies use stable releases: coroutines 1.11.0, AndroidX Core 1.19.1,
+AppCompat 1.8.0, Robolectric 4.17, AndroidX Test JUnit 1.3.0, and Espresso 3.7.0.
+JUnit remains at 4.13.2 and Billing Client remains pinned as described below.
+
+Only `GoogleBillingApiLib` is included in `settings.gradle`. The legacy `sample`
+directory has aligned dependency versions but still requires migration from the
+old SKU APIs before it can be enabled and built.
+
 ## Checkout compatibility
 
 One-time checkout omits absent offer tokens. Subscription checkout selects the
