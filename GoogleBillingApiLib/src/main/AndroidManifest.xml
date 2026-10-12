@@ -1,3 +1,18 @@
-<manifest>
-
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <activity android:name="com.android.billingclient.api.ProxyBillingActivity"
+            tools:node="remove" />
+        <activity
+            android:name="com.softstackdev.googlebilling.CompatibleProxyBillingActivity"
+            android:configChanges="keyboard|keyboardHidden|screenLayout|screenSize|orientation"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!-- Google Billing explicitly addresses this component. The alias routes
+             it to our subclass without replacing SDK checkout/result handling. -->
+        <activity-alias
+            android:name="com.android.billingclient.api.ProxyBillingActivity"
+            android:targetActivity="com.softstackdev.googlebilling.CompatibleProxyBillingActivity"
+            android:exported="false" />
+    </application>
 </manifest>

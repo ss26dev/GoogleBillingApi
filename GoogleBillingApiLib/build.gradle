@@ -32,6 +32,10 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
+
     publishing {
         singleVariant("release")
     }
@@ -47,6 +51,10 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
 
     implementation "com.android.billingclient:billing-ktx:9.1.0"
+    implementation('com.android.billingclient:billing') {
+        version { strictly '9.1.0' }
+        because 'Checkout compatibility guard relies on the 9.1.0 Activity lifecycle'
+    }
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.16.1'

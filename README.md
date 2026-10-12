@@ -38,3 +38,28 @@ project(':googleBillingApi').projectDir = new File(settingsDir, '../GoogleBillin
 ```
 implementation project(':googleBillingApi')
 ```
+
+## Checkout compatibility
+
+One-time checkout omits absent offer tokens. Subscription checkout selects the
+nonempty offer token for the displayed billing period and applies replacement
+parameters only to subscriptions. Missing product details, invalid offers, or
+a destroyed Activity reject checkout without granting access.
+
+Billing Client 9.1.0 can call
+`ActivityOptions.setPendingIntentBackgroundActivityStartMode` on a device that
+reports Android 14 but lacks that framework method (Crashlytics issue
+`a6e619dc60f9cd6944e726e6b3ba602b`). The manifest aliases Google's checkout
+component to `CompatibleProxyBillingActivity`. It retries only this missing-method
+launch without ActivityOptions; Google's result handling, cancellation,
+transaction metadata, and saved-state handling remain in place. Supported devices
+use the normal SDK path. No SDK bytecode or Android version values are modified.
+
+Billing Client is pinned to 9.1.0. Recheck initialization order, request codes
+(100, 101, 110), and intent extras before upgrading it.
+
+Run the real-SDK checkout parameter and framework compatibility tests with:
+
+```sh
+bash gradlew :GoogleBillingApiLib:testDebugUnitTest :GoogleBillingApiLib:assembleRelease
+```
