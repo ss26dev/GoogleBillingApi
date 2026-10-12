@@ -316,35 +316,21 @@ class BillingRepository private constructor(private var application: Application
             return true
         }
 
-        val originalProductDetails = augmentedProductDetails.originalProductDetails ?: return false
-        val subscriptionOfferToken =
-            originalProductDetails.subscriptionOfferDetails?.firstOrNull {
-                it.basePlanId.contains(billingPeriod)
-            }?.offerToken ?: ""
-        val productDetailsParamsList =
-            listOf(
-                BillingFlowParams.ProductDetailsParams.newBuilder()
-                    .setProductDetails(originalProductDetails)
-                    .setOfferToken(subscriptionOfferToken)
-                    .build()
-            )
-
-        val params = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(productDetailsParamsList)
-
-        if(augmentedProductDetails.purchaseToken.isNotEmpty()) {
-            params.setSubscriptionUpdateParams(
-                BillingFlowParams.SubscriptionUpdateParams.newBuilder()
-                    .setOldPurchaseToken(augmentedProductDetails.purchaseToken)
-                    .setSubscriptionReplacementMode(
-                        BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.CHARGE_FULL_PRICE
-                    )
-                    .build()
-            )
+        val originalProductDetails = augmentedProductDetails.originalProductDetails
+        if (originalProductDetails == null || activity.isFinishing || activity.isDestroyed) {
+            Log.w(TAG, "Cannot purchase: product details unavailable or Activity destroyed")
+            return false
+        }
+        val params = buildPurchaseFlowParams(
+            originalProductDetails, billingPeriod, augmentedProductDetails.purchaseToken
+        )
+        if (params == null) {
+            Log.w(TAG, "Cannot purchase: no valid offer for selected billing period")
+            return false
         }
 
         taskExecutionRetryPolicy(playStoreBillingClient, this) {
-            playStoreBillingClient.launchBillingFlow(activity, params.build())
+            playStoreBillingClient.launchBillingFlow(activity, params)
         }
         return true
     }
