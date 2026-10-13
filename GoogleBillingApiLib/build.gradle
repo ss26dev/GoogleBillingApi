@@ -69,7 +69,7 @@ afterEvaluate {
                 from components.release
                 groupId = 'com.github.ss26dev'
                 artifactId = 'GoogleBillingApi'
-                version = '3.0'
+                version = '3.1'
             }
         }
     }

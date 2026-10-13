@@ -23,7 +23,7 @@ allprojects {
 * Add the latest version dependency to your module build.gradle
 ```
 dependencies {
-    implementation 'com.github.ss26dev:GoogleBillingApi:v1.0.0'
+    implementation 'com.github.ss26dev:GoogleBillingApi:v3.1'
 }
 ```
 
