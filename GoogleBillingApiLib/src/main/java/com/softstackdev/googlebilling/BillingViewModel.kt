@@ -27,7 +27,7 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
 
     /**
      * @param billingPeriod e.g. p1m, p6m, p1y
-     * @return true if purchase was executed.
+     * @return true if checkout was accepted; use the callback overload for outcomes.
      */
     fun makePurchase(
         activity: Activity,
@@ -36,6 +36,14 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
     ): Boolean {
         return repository.makePurchase(activity, augmentedProductDetails, billingPeriod)
     }
+
+    /** Callback diagnostics survive Activity recreation in this process; do not capture a View/Activity. */
+    fun makePurchase(
+        activity: Activity,
+        augmentedProductDetails: AugmentedProductDetails,
+        billingPeriod: String,
+        onCheckoutEvent: (CheckoutEvent) -> Unit
+    ): Boolean = repository.makePurchase(activity, augmentedProductDetails, billingPeriod, onCheckoutEvent)
 
     fun makeFree24(productId: String) {
         AugmentedProductDetailsDao.updateMakeFree24(productId)

@@ -1,5 +1,6 @@
 package com.softstackdev.googlebilling.typesProductDetails
 
+import android.util.Log
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.softstackdev.googlebilling.AugmentedProductDetailsDao
@@ -33,7 +34,12 @@ class CreditConsumableAugmentedProductDetails(productId: String, title: String, 
 
     fun availableCredit() = creditNos > 0
 
+    @Synchronized
     fun addCreditOnePurchase(purchaseToken: String) {
+        if (purchaseToken.isBlank() || purchaseToken == lastConsumedPurchaseToken) {
+            Log.w("SSDBillingRepository", "Ignoring empty or already credited consumption callback")
+            return
+        }
         // the purchaseToken has been changed
         localProductDetails.savePurchaseToken(prefixName, purchaseToken)
         lastConsumedPurchaseToken = purchaseToken

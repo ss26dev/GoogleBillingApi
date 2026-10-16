@@ -76,3 +76,60 @@ Run the real-SDK checkout parameter and framework compatibility tests with:
 ```sh
 bash gradlew :GoogleBillingApiLib:testDebugUnitTest :GoogleBillingApiLib:assembleRelease
 ```
+
+
+## Checkout outcome callbacks (local development, not yet published)
+
+The existing three-argument `makePurchase` method is preserved. Its Boolean means
+that a request was accepted, not that payment succeeded. Use the new overload for
+actual launch and purchase results:
+
+```kotlin
+billingViewModel.makePurchase(activity, product, "p1y") { event ->
+    when (event.status) {
+        CheckoutStatus.PENDING -> recordPending(event.productId)
+        CheckoutStatus.COMPLETED -> recordDelivered(event.productId)
+        CheckoutStatus.CANCELLED -> recordCancellation(event.productId)
+        else -> recordDiagnostic(event.status, event.stage, event.responseCode)
+    }
+}
+```
+
+The sample record functions represent application-owned handlers. `CheckoutEvent`
+contains only a process-local request ID, product ID, requested billing period,
+status, stage, optional BillingResponseCode and categorical reason. It does not
+contain order IDs, purchase tokens, signatures or Google's raw debug message.
+Callbacks execute on main; listener failures cannot interrupt billing.
+
+`LAUNCHED` means `launchBillingFlow` returned OK. `VERIFIED` means the received
+PURCHASED transaction passed the existing signature verification. `COMPLETED`
+follows acknowledgement/consumption and local entitlement delivery. `PROCESSING_FAILED`
+means a valid payment needs acknowledgement/consumption recovery, not that payment
+was declined. Generic SDK errors remain response codes; the library does not invent
+payment-decline reasons. `ALREADY_OWNED` is an explicit Play response. Empty results
+and expired tracking are `UNRESOLVED`, not cancellations.
+
+Only a matching purchase callback whose purchase timestamp is not older than the
+request can attach a new token. Device/server clock skew can undercount diagnostic
+attribution; it never blocks verification or entitlement delivery.
+Ordinary restore queries never create checkout events. They can finish an already
+tracked pending/failed-delivery token in the same process. Duplicate token callbacks
+cannot complete a second request, and repeated consumption callbacks cannot add the
+same credits twice. An overlapping active checkout is rejected with
+`CHECKOUT_IN_PROGRESS`; pending payments release that slot.
+
+Listeners may survive Activity recreation and Shop closure, so **do not capture an
+Activity or View**. The app should retain immutable measurement context and use a
+weak reference for optional UI feedback. Attribution is process-local: after process
+death, existing purchases are restored without inventing a new checkout. This API is
+not a durable transaction ledger or server-side revenue verification.
+
+On subsequent billing activity, unresolved active requests older than five minutes
+and retained pending/delivery callbacks older than seven days expire as unknown.
+At most 32 retained attempts are kept. These tracking bounds do not cancel payments
+or revoke entitlements. SDK connection retries/restore queries may recover delivery;
+this change does not introduce a persistent background acknowledgement scheduler.
+
+The app uses the sibling source module during validation. Publish a new library
+version before switching it back to a Maven/JitPack dependency; v3.1 does not expose
+this overload. No version or release tag has been changed by this implementation.

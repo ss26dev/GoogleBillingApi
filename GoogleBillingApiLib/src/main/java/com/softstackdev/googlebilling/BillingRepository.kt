@@ -19,7 +19,6 @@ import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryProductDetailsResult
 import com.android.billingclient.api.QueryPurchasesParams
 import com.android.billingclient.api.queryPurchasesAsync
-import com.softstackdev.googlebilling.AugmentedProductDetailsDao.updateCreditOnConsumed
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.connectionRetryPolicy
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.resetConnectionRetryPolicyCounter
 import com.softstackdev.googlebilling.BillingRepository.RetryPolicies.taskExecutionRetryPolicy
@@ -36,9 +35,12 @@ import com.softstackdev.googlebilling.utils.openPlayStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.pow
 
 /**
@@ -67,6 +69,15 @@ class BillingRepository private constructor(private var application: Application
 
 
     private lateinit var playStoreBillingClient: BillingClient
+    private val consumptionProducts = ConcurrentHashMap<String, CreditConsumableAugmentedProductDetails>()
+    private val checkoutScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val checkoutTracker = CheckoutTracker { listener, event ->
+        checkoutScope.launch {
+            runCatching { listener(event) }.onFailure {
+                Log.w(TAG, "Checkout diagnostics listener failed: ${it.javaClass.simpleName}")
+            }
+        }
+    }
 
     private val playStoreResponseCount = AtomicInteger(0)
     private val playStoreResponseCountExpected = AtomicInteger(0)
@@ -187,6 +198,7 @@ class BillingRepository private constructor(private var application: Application
         playStoreResponseCountExpected.incrementAndGet()
         taskExecutionRetryPolicy(playStoreBillingClient, this) {
             val purchasesResult = mutableListOf<Purchase>()
+            var allQueriesSucceeded = true
 
             getCoroutineScope().launch {
                 try {
@@ -199,6 +211,7 @@ class BillingRepository private constructor(private var application: Application
                     if (result.billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                         purchasesResult.addAll(result.purchasesList)
                     } else {
+                        allQueriesSucceeded = false
                         Log.e(TAG, "query INAPP purchases - ${result.billingResult.debugMessage}")
                     }
 
@@ -212,11 +225,15 @@ class BillingRepository private constructor(private var application: Application
                         if (result.billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                             purchasesResult.addAll(result.purchasesList)
                         } else {
+                            allQueriesSucceeded = false
                             Log.e(TAG, "query SUBS purchases - ${result.billingResult.debugMessage}")
                         }
+                    } else if (SUBSCRIPTION_PRODUCTS.isNotEmpty()) {
+                        allQueriesSucceeded = false
                     }
 
-                    AugmentedProductDetailsDao.resetPurchasesForAll()
+                    // A failed restore query must not revoke cached purchases.
+                    if (allQueriesSucceeded) AugmentedProductDetailsDao.resetPurchasesForAll()
                     processPurchasesResponseAsync(purchasesResult)
                 } finally {
                     markLoadResponseReceived("purchases")
@@ -226,14 +243,22 @@ class BillingRepository private constructor(private var application: Application
     }
 
 
-    private fun processPurchasesResponseAsync(purchasesResult: List<Purchase>) {
+    private fun processPurchasesResponseAsync(purchasesResult: List<Purchase>, fromRestore: Boolean = true) {
         getCoroutineScope().launch {
             val validPurchases = mutableListOf<Purchase>()
             purchasesResult.forEach { purchase ->
-                if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
-                    if (isSignatureValid(purchase)) {
-                        validPurchases.add(purchase)
+                val attempt = checkoutTracker.observe(purchase.products, purchase.purchaseToken, fromRestore, purchase.purchaseTime)
+                when (purchase.purchaseState) {
+                    Purchase.PurchaseState.PENDING -> attempt?.let(checkoutTracker::pending)
+                    Purchase.PurchaseState.PURCHASED -> {
+                        if (isSignatureValid(purchase)) {
+                            attempt?.let(checkoutTracker::verified)
+                            validPurchases.add(purchase)
+                        } else {
+                            attempt?.let { checkoutTracker.invalid(it, CheckoutReason.INVALID_SIGNATURE) }
+                        }
                     }
+                    else -> attempt?.let { checkoutTracker.invalid(it, CheckoutReason.UNKNOWN_PURCHASE_STATE) }
                 }
             }
 
@@ -254,6 +279,7 @@ class BillingRepository private constructor(private var application: Application
             }?.apply {
                 when (this) {
                     is CreditConsumableAugmentedProductDetails -> {
+                        consumptionProducts[purchase.purchaseToken] = this
                         pendingToBeConsumedPurchaseToken = purchase.purchaseToken
                         consumePurchase(purchase.purchaseToken)
                     }
@@ -275,6 +301,9 @@ class BillingRepository private constructor(private var application: Application
         }
 
         AugmentedProductDetailsDao.updateAcknowledgedPurchases(acknowledgedPurchase)
+        acknowledgedPurchase.forEach {
+            checkoutTracker.delivered(it.purchaseToken, CheckoutStage.ACKNOWLEDGEMENT)
+        }
     }
 
     private fun acknowledgePurchase(purchase: Purchase) {
@@ -286,9 +315,14 @@ class BillingRepository private constructor(private var application: Application
             when (billingResult.responseCode) {
                 BillingClient.BillingResponseCode.OK -> {
                     AugmentedProductDetailsDao.updateAcknowledgedPurchase(purchase)
+                    checkoutTracker.delivered(purchase.purchaseToken, CheckoutStage.ACKNOWLEDGEMENT)
                 }
 
-                else -> Log.d(TAG, "onAcknowledgePurchaseResponse - ${billingResult.debugMessage}")
+                else -> {
+                    checkoutTracker.processingFailed(purchase.purchaseToken,
+                        CheckoutStage.ACKNOWLEDGEMENT, billingResult.responseCode)
+                    Log.d(TAG, "Acknowledgement failed: ${billingResult.responseCode}")
+                }
             }
         }
     }
@@ -310,27 +344,79 @@ class BillingRepository private constructor(private var application: Application
         activity: Activity,
         augmentedProductDetails: AugmentedProductDetails,
         billingPeriod: String = ""
+    ): Boolean = makePurchase(activity, augmentedProductDetails, billingPeriod) { }
+
+    /** Returns whether the request was accepted, NOT whether payment succeeded.
+     * Diagnostics are delivered on main, contain no tokens, and can outlive the Activity.
+     * The listener must not capture an Activity/View. Existing three-argument callers remain valid.
+     */
+    fun makePurchase(
+        activity: Activity,
+        augmentedProductDetails: AugmentedProductDetails,
+        billingPeriod: String,
+        onCheckoutEvent: (CheckoutEvent) -> Unit
     ): Boolean {
+        val attempt = checkoutTracker.begin(augmentedProductDetails.productId, billingPeriod, onCheckoutEvent)
+        if (attempt == null) {
+            Log.w(TAG, "Checkout rejected: another checkout is active")
+            return false
+        }
+        checkoutTracker.remember(augmentedProductDetails.purchaseToken)
+        if (augmentedProductDetails is CreditConsumableAugmentedProductDetails) {
+            checkoutTracker.remember(augmentedProductDetails.lastConsumedPurchaseToken)
+        }
         if (augmentedProductDetails is StoreAppAugmentedProductDetails) {
+            checkoutTracker.unresolved(attempt, CheckoutReason.EXTERNAL_STORE)
             openPlayStore(activity, augmentedProductDetails.packageName)
             return true
         }
 
         val originalProductDetails = augmentedProductDetails.originalProductDetails
-        if (originalProductDetails == null || activity.isFinishing || activity.isDestroyed) {
-            Log.w(TAG, "Cannot purchase: product details unavailable or Activity destroyed")
+        val unavailable = when {
+            activity.isFinishing || activity.isDestroyed -> CheckoutReason.ACTIVITY_UNAVAILABLE
+            originalProductDetails == null -> CheckoutReason.PRODUCT_UNAVAILABLE
+            else -> null
+        }
+        if (unavailable != null || originalProductDetails == null) {
+            Log.w(TAG, "Checkout rejected: $unavailable")
+            checkoutTracker.reject(attempt, unavailable ?: CheckoutReason.PRODUCT_UNAVAILABLE)
             return false
         }
-        val params = buildPurchaseFlowParams(
-            originalProductDetails, billingPeriod, augmentedProductDetails.purchaseToken
-        )
+        val params = try {
+            buildPurchaseFlowParams(originalProductDetails, billingPeriod, augmentedProductDetails.purchaseToken)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Checkout parameter construction failed")
+            null
+        }
         if (params == null) {
-            Log.w(TAG, "Cannot purchase: no valid offer for selected billing period")
+            Log.w(TAG, "Checkout rejected: no valid offer for selected billing period")
+            checkoutTracker.reject(attempt, CheckoutReason.OFFER_UNAVAILABLE)
             return false
         }
 
-        taskExecutionRetryPolicy(playStoreBillingClient, this) {
-            playStoreBillingClient.launchBillingFlow(activity, params)
+        // launchBillingFlow must run on main, including after reconnecting.
+        checkoutScope.launch {
+            try {
+                if (!playStoreBillingClient.isReady) {
+                    connectToPlayBillingService()
+                    delay(2000)
+                }
+                if (activity.isFinishing || activity.isDestroyed) {
+                    Log.w(TAG, "Checkout Activity became unavailable before launch")
+                    checkoutTracker.reject(attempt, CheckoutReason.ACTIVITY_UNAVAILABLE)
+                } else {
+                    val result = playStoreBillingClient.launchBillingFlow(activity, params)
+                    checkoutTracker.launchResult(attempt, result.responseCode)
+                    if (result.responseCode == BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED) {
+                        queryPurchasesAsync()
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Checkout launch failed: ${e.javaClass.simpleName}")
+                checkoutTracker.reject(attempt, CheckoutReason.LAUNCH_EXCEPTION)
+            }
         }
         return true
     }
@@ -339,11 +425,13 @@ class BillingRepository private constructor(private var application: Application
         billingResult: BillingResult,
         purchases: MutableList<Purchase>?
     ) {
+        if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+            checkoutTracker.purchaseResponseFailure(billingResult.responseCode)
+        }
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
-                purchases?.apply {
-                    processPurchasesResponseAsync(purchases)
-                }
+                if (purchases.isNullOrEmpty()) checkoutTracker.emptyResponse()
+                else processPurchasesResponseAsync(purchases, fromRestore = false)
             }
 
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
@@ -369,10 +457,14 @@ class BillingRepository private constructor(private var application: Application
     }
 
     override fun onConsumeResponse(billingResult: BillingResult, purchaseToken: String) {
+        if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+            checkoutTracker.processingFailed(purchaseToken, CheckoutStage.CONSUMPTION, billingResult.responseCode)
+        }
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
                 getCoroutineScope().launch {
-                    updateCreditOnConsumed(purchaseToken)
+                    consumptionProducts.remove(purchaseToken)?.addCreditOnePurchase(purchaseToken)
+                    checkoutTracker.delivered(purchaseToken, CheckoutStage.CONSUMPTION)
                 }
             }
 
@@ -395,7 +487,7 @@ class BillingRepository private constructor(private var application: Application
         ) {
             true
         } else {
-            Log.e(TAG, "Invalid signature - purchase= $purchase")
+            Log.e(TAG, "Invalid purchase signature; entitlement not granted")
             false
         }
     }
