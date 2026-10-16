@@ -23,7 +23,7 @@ allprojects {
 * Add the latest version dependency to your module build.gradle
 ```
 dependencies {
-    implementation 'com.github.ss26dev:GoogleBillingApi:v3.1'
+    implementation 'com.github.ss26dev:GoogleBillingApi:v3.2'
 }
 ```
 
@@ -78,7 +78,7 @@ bash gradlew :GoogleBillingApiLib:testDebugUnitTest :GoogleBillingApiLib:assembl
 ```
 
 
-## Checkout outcome callbacks (local development, not yet published)
+## Checkout outcome callbacks (v3.2)
 
 The existing three-argument `makePurchase` method is preserved. Its Boolean means
 that a request was accepted, not that payment succeeded. Use the new overload for
@@ -130,6 +130,5 @@ At most 32 retained attempts are kept. These tracking bounds do not cancel payme
 or revoke entitlements. SDK connection retries/restore queries may recover delivery;
 this change does not introduce a persistent background acknowledgement scheduler.
 
-The app uses the sibling source module during validation. Publish a new library
-version before switching it back to a Maven/JitPack dependency; v3.1 does not expose
-this overload. No version or release tag has been changed by this implementation.
+Checkout outcome callbacks are available starting with v3.2. Upgrade the
+Maven/JitPack dependency to v3.2 to use this overload; v3.1 does not expose it.
