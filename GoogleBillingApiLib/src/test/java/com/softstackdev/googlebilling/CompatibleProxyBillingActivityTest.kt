@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.ResultReceiver
 import com.android.billingclient.api.BillingClient
 import org.junit.Assert.*
 import org.junit.Test
@@ -115,6 +116,72 @@ class CompatibleProxyBillingActivityTest {
         val restored = Robolectric.buildActivity(CompatibleProxyBillingActivity::class.java, checkoutIntent()).create(state).get()
         assertNull(shadowOf(restored).lastIntentSenderRequest)
         assertEquals(123L, state.getLong("billingClientTransactionId"))
+    }
+
+    @Test
+    fun missingCheckoutIntentReportsOneFailureAndPreservesMetadata() {
+        val invalid = checkoutIntent().apply { removeExtra("BUY_INTENT") }
+            .putExtra("wasServiceAutoReconnected", true)
+        val controller = Robolectric.buildActivity(CompatibleProxyBillingActivity::class.java, invalid)
+        val activity = controller.create().get()
+        assertNull(shadowOf(activity).lastIntentSenderRequest)
+        assertTrue(activity.isFinishing)
+        val result = purchaseBroadcast()
+        assertEquals(BillingClient.BillingResponseCode.ERROR, result.getIntExtra("RESPONSE_CODE", -1))
+        assertEquals(123L, result.getLongExtra("billingClientTransactionId", -1))
+        assertTrue(result.getBooleanExtra("wasServiceAutoReconnected", false))
+        controller.destroy()
+        assertEquals(1, shadowOf(RuntimeEnvironment.getApplication()).broadcastIntents.count {
+            it.action == "com.android.vending.billing.LOCAL_BROADCAST_PURCHASES_UPDATED"
+        })
+        // A failed launch must not prevent the next valid checkout.
+        val retry = Robolectric.buildActivity(CompatibleProxyBillingActivity::class.java, checkoutIntent()).create().get()
+        assertNotNull(shadowOf(retry).lastIntentSenderRequest)
+        assertFalse(retry.isFinishing)
+    }
+
+    @Test
+    fun nullFirstPartyCheckoutReportsErrorWithFirstPartyMarker() {
+        val invalid = checkoutIntent().putExtra("BUY_INTENT", null as PendingIntent?)
+            .putExtra("IS_FLOW_FROM_FIRST_PARTY_CLIENT", true)
+        val activity = Robolectric.buildActivity(CompatibleProxyBillingActivity::class.java, invalid).create().get()
+        assertTrue(activity.isFinishing)
+        assertEquals(BillingClient.BillingResponseCode.ERROR, purchaseBroadcast().getIntExtra("RESPONSE_CODE", -1))
+        assertTrue(purchaseBroadcast().getBooleanExtra("IS_FIRST_PARTY_PURCHASE", false))
+    }
+
+    @Test
+    fun nullInAppMessageNotifiesItsReceiverWithoutPurchaseBroadcast() {
+        val results = mutableListOf<Int>()
+        val receiver = object : ResultReceiver(null) {
+            override fun onReceiveResult(resultCode: Int, resultData: Bundle?) { results += resultCode }
+        }
+        val invalid = checkoutIntent().apply { removeExtra("BUY_INTENT") }
+            .putExtra("IN_APP_MESSAGE_INTENT", null as PendingIntent?)
+            .putExtra("in_app_message_result_receiver", receiver)
+        val controller = Robolectric.buildActivity(CompatibleProxyBillingActivity::class.java, invalid)
+        val activity = controller.create().get()
+        assertTrue(activity.isFinishing)
+        controller.destroy()
+        assertEquals(listOf(0), results)
+        assertFalse(shadowOf(RuntimeEnvironment.getApplication()).broadcastIntents.any {
+            it.action == "com.android.vending.billing.LOCAL_BROADCAST_PURCHASES_UPDATED"
+        })
+    }
+
+    @Test
+    fun recreationWithoutLaunchIntentWaitsForExistingCheckoutResult() {
+        val original = Robolectric.buildActivity(CompatibleProxyBillingActivity::class.java, checkoutIntent()).create()
+        val state = Bundle()
+        original.saveInstanceState(state).destroy()
+        val restored = Robolectric.buildActivity(CompatibleProxyBillingActivity::class.java,
+            Intent(RuntimeEnvironment.getApplication(), CompatibleProxyBillingActivity::class.java)).create(state).get()
+        assertFalse(restored.isFinishing)
+        assertNull(shadowOf(restored).lastIntentSenderRequest)
+        shadowOf(restored).callOnActivityResult(100, Activity.RESULT_OK,
+            Intent().putExtra("RESPONSE_CODE", BillingClient.BillingResponseCode.OK))
+        assertEquals(BillingClient.BillingResponseCode.OK, purchaseBroadcast().getIntExtra("RESPONSE_CODE", -1))
+        assertEquals(123L, purchaseBroadcast().getLongExtra("billingClientTransactionId", -1))
     }
 
     @Test
