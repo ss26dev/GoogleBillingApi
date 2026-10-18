@@ -21,20 +21,45 @@ class CompatibleProxyBillingActivity : ProxyBillingActivity() {
             // keep Google's result handling and saved-state lifecycle unchanged.
             Log.w(TAG, "Framework lacks billing background-start options; using legacy launch")
             launchWithoutBackgroundStartOptions()
+        } catch (error: NullPointerException) {
+            // Billing 9.1.0 initializes callbacks and transaction state before
+            // dereferencing its launch PendingIntent. Handle only that known
+            // failure, after SDK initialization; never synthesize restored state
+            // or swallow unrelated SDK/framework null-pointer failures.
+            if (savedInstanceState != null || !isMissingLaunchPendingIntent(error)) throw error
+            Log.w(TAG, "Billing launch pending intent is missing")
+            reportLaunchFailure(launchRequestCode())
         }
     }
 
-    private fun launchWithoutBackgroundStartOptions() {
-        val inAppMessage = !intent.hasExtra("BUY_INTENT") && intent.hasExtra("IN_APP_MESSAGE_INTENT")
-        val requestCode = when {
-            inAppMessage -> 101
-            intent.getBooleanExtra("IS_FLOW_FROM_FIRST_PARTY_CLIENT", false) -> 110
-            else -> 100
+    @Suppress("DEPRECATION")
+    private fun isMissingLaunchPendingIntent(error: NullPointerException): Boolean {
+        val origin = error.stackTrace.firstOrNull()
+        return origin?.className == ProxyBillingActivity::class.java.name &&
+            origin.methodName == "onCreate" &&
+            error.message.orEmpty().contains("android.app.PendingIntent.getIntentSender()") &&
+            intent.getParcelableExtra<PendingIntent>(launchPendingIntentKey()) == null
+    }
+
+    private fun launchPendingIntentKey(): String =
+        if (!intent.hasExtra("BUY_INTENT") && intent.hasExtra("IN_APP_MESSAGE_INTENT")) {
+            "IN_APP_MESSAGE_INTENT"
+        } else {
+            "BUY_INTENT"
         }
+
+    private fun launchRequestCode(): Int = when {
+        launchPendingIntentKey() == "IN_APP_MESSAGE_INTENT" -> 101
+        intent.getBooleanExtra("IS_FLOW_FROM_FIRST_PARTY_CLIENT", false) -> 110
+        else -> 100
+    }
+
+    private fun launchWithoutBackgroundStartOptions() {
+        val requestCode = launchRequestCode()
         // Use the legacy overload: this framework may lack APIs despite its reported SDK version.
         @Suppress("DEPRECATION")
         val pendingIntent = intent.getParcelableExtra<PendingIntent>(
-            if (inAppMessage) "IN_APP_MESSAGE_INTENT" else "BUY_INTENT"
+            launchPendingIntentKey()
         )
         if (pendingIntent == null) {
             Log.w(TAG, "Cannot retry billing launch: pending intent is missing")
