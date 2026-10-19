@@ -23,7 +23,7 @@ allprojects {
 * Add the latest version dependency to your module build.gradle
 ```
 dependencies {
-    implementation 'com.github.ss26dev:GoogleBillingApi:v3.2'
+    implementation 'com.github.ss26dev:GoogleBillingApi:v3.3'
 }
 ```
 
@@ -132,3 +132,17 @@ this change does not introduce a persistent background acknowledgement scheduler
 
 Checkout outcome callbacks are available starting with v3.2. Upgrade the
 Maven/JitPack dependency to v3.2 to use this overload; v3.1 does not expose it.
+
+
+## Missing checkout launch intent (v3.3)
+
+Includes fix `e7df6ed` for a missing/null PendingIntent in Billing Client 9.1.0
+checkout startup. Only that specific initialized-SDK failure returns an error
+through Google's callback handling. It closes without granting access, preserves
+transaction metadata and restoration, and permits later valid checkout attempts.
+The consumer R8 rule preserves the lifecycle frame used by the guard.
+
+All 35 library tests, including 14 activity compatibility tests, cover normal
+checkout, legacy-framework fallback, invalid checkout/message intents, callbacks,
+retry and restored activity behavior. Use this published dependency for app
+releases; a local sibling override is for library development only.
